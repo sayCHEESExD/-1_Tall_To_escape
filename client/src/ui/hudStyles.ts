@@ -330,13 +330,95 @@ body.hj-touch-mode .hj-account__name { max-width: 30vw; }
   z-index: 23; padding: 3px 8px; border-radius: 8px; background: rgba(10,16,28,.6); color: #b8ff5c; font-size: 13px; pointer-events: none;
 }
 
-/* Phones on their side: the rail becomes a row across the top-left. */
+/*
+ * Phones on their side: the rail becomes a row across the top-left, and every
+ * menu is the SAME menu, compact - smaller type, padding, icons and spacing, so
+ * a panel leaves the game visible around it. Tap targets stay at least ~32px.
+ * Desktop (never this short) and portrait phones never match this block.
+ */
 @media (orientation: landscape) and (max-height: 500px) {
-  :root { --hj-rail: 52px; }
-  .hj-rail { top: max(8px, env(safe-area-inset-top, 0px)); transform: none; grid-template-columns: repeat(5, var(--hj-rail)); gap: 10px; }
+  :root { --hj-rail: 46px; }
+  .hj-rail { top: max(6px, env(safe-area-inset-top, 0px)); transform: none; grid-template-columns: repeat(5, var(--hj-rail)); gap: 8px; }
+  .hj-tile { border-width: 3px; border-radius: 12px; }
+  .hj-tile__label { font-size: 10px; bottom: -8px; }
+  .hj-tile__badge { width: 18px; height: 18px; border-width: 2px; font-size: 11px; line-height: 14px; right: -6px; top: -6px; }
   body.hj-touch-mode .hj-hud { bottom: 8px; width: 46vw; }
-  .hj-panel__box { max-height: 94vh; }
-  .hj-card__gem, .hj-card__pet { width: 40px; height: 40px; margin: 4px 0; }
+
+  /* Account chip */
+  .hj-account { top: max(6px, env(safe-area-inset-top, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); gap: 4px; }
+  .hj-account__row { gap: 6px; padding: 2px 8px 2px 2px; border-width: 2px; }
+  .hj-account__pfp { width: 24px; height: 24px; }
+  .hj-account__btn, .hj-account__login { border-width: 2px; border-radius: 8px; padding: 3px 8px; font-size: 11px; }
+
+  /* Panel shell */
+  .hj-panel { background: rgba(6,10,18,.3); }
+  .hj-panel__box {
+    width: min(420px, 58vw); max-height: 86vh; border-width: 3px; border-radius: 14px; background-size: 16px 16px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.45);
+  }
+  .hj-panel__head { gap: 6px; padding: 4px 44px 2px 12px; font-size: 20px; }
+  .hj-panel__close { right: -10px; top: -12px; width: 40px; height: 40px; font-size: 32px; }
+  .hj-panel__body { padding: 4px 10px 10px; font-size: 13px; }
+  .hj-panel .hj-outline {
+    text-shadow: 2px 0 0 var(--hj-ink), -2px 0 0 var(--hj-ink), 0 2px 0 var(--hj-ink), 0 -2px 0 var(--hj-ink),
+      1px 1px 0 var(--hj-ink), -1px 1px 0 var(--hj-ink), 1px -1px 0 var(--hj-ink), -1px -1px 0 var(--hj-ink);
+  }
+  .hj-btn {
+    min-height: 32px; border-width: 2px; border-radius: 9px; padding: 4px 10px; gap: 4px; font-size: 13px;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,.2);
+    text-shadow: 1px 0 0 var(--hj-ink), -1px 0 0 var(--hj-ink), 0 1px 0 var(--hj-ink), 0 -1px 0 var(--hj-ink);
+  }
+
+  /* Trail and egg rows */
+  .hj-cos, .hj-egg { gap: 8px; padding: 6px 8px; margin-bottom: 8px; border-width: 3px; border-radius: 12px; }
+  .hj-cos { grid-template-columns: 44px 1fr auto; }
+  .hj-cos__swatch { width: 40px; height: 40px; box-shadow: 0 0 10px var(--hj-glow, #fff); }
+  .hj-cos__name, .hj-egg__name { font-size: 15px; }
+  .hj-cos__mult { font-size: 12px; }
+  .hj-egg { grid-template-columns: 40px 1fr auto; }
+  .hj-egg__shell { width: 32px; height: 42px; border-width: 2px; box-shadow: inset 5px 6px 0 rgba(255,255,255,.35); }
+  .hj-egg__pets { gap: 4px; margin-top: 4px; }
+  .hj-egg__pet { padding: 2px 3px; border-radius: 7px; font-size: 9px; }
+  .hj-egg__pet b { font-size: 10px; }
+  .hj-shop__note, .hj-shop__summary { margin: 4px 0 6px; font-size: 12px; }
+
+  /* Pet cards and pets panel */
+  .hj-card { gap: 3px; padding: 5px 4px 6px; border-width: 2px; border-radius: 12px; }
+  .hj-card__rarity, .hj-card__name { font-size: 12px; }
+  .hj-card__bonus, .hj-card__rarity--small { font-size: 11px; }
+  .hj-card__gem, .hj-card__pet { width: 34px; height: 34px; margin: 3px 0; border-width: 3px; }
+  .hj-bp__tabs { gap: 6px; margin-bottom: 6px; }
+  .hj-bp__tab { min-width: 76px; padding: 3px 6px; border-width: 2px; border-radius: 9px; font-size: 11px; }
+  .hj-bp__tab img { height: 26px; }
+  .hj-bp__frame { min-height: 0; padding: 6px; border-width: 3px; border-radius: 12px; }
+  .hj-bp__title { margin-bottom: 4px; font-size: 14px; }
+  .hj-bp__grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .hj-bp__equipped { right: 4px; top: 4px; padding: 0 4px; font-size: 10px; }
+  .hj-bp__empty { margin-top: 16px; }
+  .hj-bp__actions { gap: 6px; margin-top: 8px; }
+
+  /* Rebirth */
+  .hj-panel--rebirth .hj-panel__box { width: min(420px, 60vw); }
+  .hj-panel--rebirth .hj-panel__head { padding: 5px 50px 5px 10px; border-bottom-width: 3px; font-size: 20px; }
+  .hj-panel--rebirth .hj-panel__close { right: 6px; top: 5px; width: 34px; height: 34px; border-width: 3px; font-size: 18px; }
+  .hj-panel--rebirth .hj-panel__body { padding: 6px 12px 10px; }
+  .hj-rb__cols { gap: 8px; margin-bottom: 4px; }
+  .hj-rb__label { margin-bottom: 4px; font-size: 15px; }
+  .hj-rb__card { padding: 6px 4px; border-width: 3px; font-size: 15px; }
+  .hj-rb__warn { margin: 6px 0 4px; font-size: 13px; }
+  .hj-rb__bar { height: 32px; border-width: 3px; margin-bottom: 8px; }
+  .hj-rb__barlabel { font-size: 17px; }
+  .hj-rb__button { padding: 6px 8px; border-width: 3px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
+  .hj-rb__go { font-size: 22px; }
+  .hj-rb__actions .hj-rb__button { width: min(100%, 220px); }
+
+  /* Friends, Bux and avatar panels */
+  .hj-panel__note { margin: 2px 0 6px; line-height: 1.35; }
+  .hj-action { margin-top: 6px; padding: 7px; border-width: 3px; border-radius: 10px; font-size: 14px; }
+  .hj-friend, .hj-bux { gap: 8px; padding: 5px 2px; }
+  .hj-friend__pfp { width: 28px; height: 28px; }
+  .hj-friend__invite, .hj-bux__buy { padding: 4px 9px; border-width: 2px; font-size: 12px; }
+  .hj-slider { gap: 2px; margin-bottom: 6px; font-size: 12px; }
 }
 @media (max-width: 560px) {
   :root { --hj-rail: 50px; }
