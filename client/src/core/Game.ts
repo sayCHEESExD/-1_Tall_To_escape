@@ -13,7 +13,7 @@ import {
 } from '@highjump/shared';
 import { AudioManager } from '../audio/AudioManager.js';
 import { PlayerAudio } from '../audio/PlayerAudio.js';
-import { Bloxity } from '../bloxity/Bloxity.js';
+import { Bloxity, GAME_SLUG } from '../bloxity/Bloxity.js';
 import { BloxityAvatar } from '../bloxity/BloxityAvatar.js';
 import type { LegionEquipped, LegionProportions } from '../bloxity/legionTypes.js';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera.js';
@@ -463,14 +463,14 @@ export class Game {
 
   /**
    * Who this client is, from Bloxity: the token of a signed-in account (the
-   * server verifies it and takes the account's name and thumbnail from Bloxity),
-   * or else the guest name and thumbnail Bloxity's SDK built for this player.
+   * server verifies it against this game's slug and takes the account's name
+   * and thumbnail from Bloxity), or else a guest - shown as "Guest", never by
+   * Bloxity's random guest name - with the guest avatar Bloxity built for them.
    */
   private identityPayload(): IdentityPayload {
     const token = this.bloxity.getToken();
-    if (token) return { token, guestName: '', guestAvatar: '' };
-    const guest = this.bloxity.getGuest();
-    return { token: null, guestName: guest?.displayName || guest?.username || '', guestAvatar: guest?.pfp || '' };
+    if (token) return { token, gameSlug: GAME_SLUG, guestAvatar: '' };
+    return { token: null, gameSlug: GAME_SLUG, guestAvatar: this.bloxity.getGuest()?.pfp || '' };
   }
 
   /** Send the identity to the room when it actually changed. */

@@ -12,25 +12,48 @@ export interface VerifiedBloxityUser {
   readonly avatarUrl: string;
 }
 
+type Json = Record<string, unknown>;
+
+interface Answer {
+  readonly status: number;
+  readonly body: Json | null;
+}
+
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /** The user inside the few shapes Bloxity's responses take. */
-const userOf = (body: Record<string, unknown>): Record<string, unknown> =>
-  (body['user'] ?? body['profile'] ?? body['data'] ?? body) as Record<string, unknown>;
+const userOf = (body: Json): Json => {
+  const inner = body['user'] ?? body['profile'] ?? body['data'];
+  return (inner && typeof inner === 'object' ? inner : body) as Json;
+};
 
-const avatarOf = (user: Record<string, unknown>): string =>
-  normalizeAvatarUrl(user['pfp'] ?? user['avatarUrl'] ?? user['profilePicture']);
+const idOf = (user: Json | null): string => {
+  const id = user?.['_id'] ?? user?.['id'];
+  return typeof id === 'string' ? id : '';
+};
 
-const getJson = async (url: string, token: string): Promise<Record<string, unknown> | null> => {
+const avatarOf = (user: Json | null): string =>
+  user ? normalizeAvatarUrl(user['pfp'] ?? user['avatarUrl'] ?? user['profilePicture']) : '';
+
+/** The verified account, filling anything `user` lacks from `extra` (the same account). */
+const toVerified = (user: Json, extra: Json | null = null): VerifiedBloxityUser => {
+  const username = text(user['username']) || text(extra?.['username']);
+  const displayName = text(user['displayName']) || text(extra?.['displayName']) || username;
+  return { id: idOf(user), username, displayName: displayName.slice(0, 40), avatarUrl: avatarOf(user) || avatarOf(extra) };
+};
+
+/** A slug as Bloxity writes them. Anything else is not sent. */
+const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+const request = async (url: string, token: string, body?: Json): Promise<Answer> => {
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    method: body ? 'POST' : 'GET',
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(6000),
   });
-  if (!response.ok) {
-    logger.warn(SCOPE, `token rejected by Bloxity at ${new URL(url).pathname} (HTTP ${response.status})`);
-    return null;
-  }
-  return (await response.json()) as Record<string, unknown>;
+  if (!response.ok) return { status: response.status, body: null };
+  return { status: response.status, body: (await response.json()) as Json };
 };
 
 /**
@@ -40,41 +63,46 @@ const getJson = async (url: string, token: string): Promise<Record<string, unkno
  * they were somebody else and collect that person's paid-for Bux grants; a
  * token can only be answered by Bloxity for the account that owns it.
  *
- * Verified with Bloxity's authenticated profile route (`/v1/social/profile`,
- * the one the reference page calls through `Legion.SDK.api.get`). The display
- * name and avatar thumbnail come from the same answer; when it lacks either,
- * `/v1/auth/me` - the route Bloxity's SDK builds its own user object from - is
- * asked with the same token, and used only if it names the same account.
+ * A token issued inside a game is a GAME CAPABILITY, which Bloxity's account
+ * routes refuse (401). It is verified exactly the way Bloxity's own SDK verifies
+ * it: `POST /v1/auth/game-token/verify` with the game's slug. Only if no slug
+ * accepts it is it treated as a plain account token and verified with
+ * `/v1/social/profile`, with `/v1/auth/me` filling in a missing display name or
+ * avatar for the same account.
+ *
+ * @param gameSlugs slugs to verify an in-game token against (the client's, then this server's)
  */
-export const verifyBloxityToken = async (token: string, apiBase: string): Promise<VerifiedBloxityUser | null> => {
+export const verifyBloxityToken = async (
+  token: string,
+  apiBase: string,
+  gameSlugs: readonly string[],
+): Promise<VerifiedBloxityUser | null> => {
   if (!token || token.length > 4096) return null;
+  const refused: string[] = [];
   try {
-    const body = await getJson(`${apiBase}/v1/social/profile`, token);
-    if (!body) return null;
-    const candidate = userOf(body);
-    const id = candidate['_id'] ?? candidate['id'];
-    if (typeof id !== 'string' || !id) {
-      logger.warn(SCOPE, 'Bloxity profile response had no id');
-      return null;
-    }
-    const username = text(candidate['username']);
-    let displayName = text(candidate['displayName']);
-    let avatarUrl = avatarOf(candidate);
-
-    if (!displayName || !avatarUrl) {
-      try {
-        const me = await getJson(`${apiBase}/v1/auth/me`, token);
-        const user = me ? userOf(me) : null;
-        if (user && (user['_id'] ?? user['id']) === id) {
-          displayName ||= text(user['displayName']);
-          avatarUrl ||= avatarOf(user);
-        }
-      } catch (error) {
-        logger.warn(SCOPE, `could not read the Bloxity user profile: ${String(error)}`);
-      }
+    for (const gameSlug of new Set(gameSlugs.filter((slug) => SLUG.test(slug)))) {
+      const answer = await request(`${apiBase}/v1/auth/game-token/verify`, token, { gameSlug });
+      const user = answer.body ? userOf(answer.body) : null;
+      if (user && idOf(user)) return toVerified(user);
+      refused.push(`game-token/verify "${gameSlug}" HTTP ${answer.status}`);
     }
 
-    return { id, username, displayName: (displayName || username).slice(0, 40), avatarUrl };
+    const profile = await request(`${apiBase}/v1/social/profile`, token);
+    const profileUser = profile.body ? userOf(profile.body) : null;
+    if (profileUser && idOf(profileUser) && text(profileUser['displayName']) && avatarOf(profileUser)) {
+      return toVerified(profileUser);
+    }
+
+    const me = await request(`${apiBase}/v1/auth/me`, token);
+    const meUser = me.body ? userOf(me.body) : null;
+    if (profileUser && idOf(profileUser)) {
+      return toVerified(profileUser, meUser && idOf(meUser) === idOf(profileUser) ? meUser : null);
+    }
+    if (meUser && idOf(meUser)) return toVerified(meUser);
+
+    refused.push(`social/profile HTTP ${profile.status}`, `auth/me HTTP ${me.status}`);
+    logger.warn(SCOPE, `Bloxity did not accept the player's token (${refused.join(', ')})`);
+    return null;
   } catch (error) {
     logger.warn(SCOPE, `could not verify token: ${String(error)}`);
     return null;

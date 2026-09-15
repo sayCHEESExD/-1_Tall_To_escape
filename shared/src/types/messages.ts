@@ -54,13 +54,14 @@ export interface PetHatchedMessage {
  * with Bloxity, so nobody can claim another account's paid-for Bux grants by
  * naming its id. Empty means not signed in.
  *
- * Without a token, the guest name and thumbnail Bloxity's SDK gave this player
- * (`auth.getGuest()`) are sent instead. They are DISPLAY ONLY: cleaned by the
- * server, the thumbnail only ever a Bloxity-hosted image, and never tied to an
- * account, so they can reach nobody's Bux.
+ * `gameSlug` is the slug the client's SDK was initialised with: a token issued
+ * inside a game is a game capability, which Bloxity verifies against that slug.
+ * Without a token the player is shown as a guest, and `guestAvatar` is the
+ * thumbnail Bloxity's SDK built for them (`auth.getGuest()`) - DISPLAY ONLY,
+ * accepted only as a Bloxity-hosted image, and tied to no account.
  */
 export interface BloxityIdentityMessage {
   token: string;
-  guestName?: string;
+  gameSlug?: string;
   guestAvatar?: string;
 }

@@ -46,8 +46,9 @@ interface JoinOptions {
   playerId?: string;
   /** A Bloxity token, verified by the server with Bloxity. Never an id. */
   bloxityToken?: string;
-  /** Without a token: the Bloxity guest name and thumbnail, display only. */
-  guestName?: string;
+  /** The slug the client's Bloxity SDK runs as; in-game tokens are verified against it. */
+  gameSlug?: string;
+  /** Without a token: the Bloxity guest avatar thumbnail, display only. */
   guestAvatar?: string;
 }
 
@@ -176,7 +177,7 @@ export class GameRoom extends Room<GameState> {
     // player keeps the name they were last saved with.
     this.resolveIdentity(client.sessionId, {
       token: typeof options.bloxityToken === 'string' ? options.bloxityToken : '',
-      guestName: options.guestName,
+      gameSlug: options.gameSlug,
       guestAvatar: options.guestAvatar,
     });
 
@@ -282,11 +283,12 @@ export class GameRoom extends Room<GameState> {
    * Resolve who this player is - the name and avatar everyone sees - and hand
    * over anything their account bought.
    *
-   * With a token, Bloxity is asked, and the account's display name and avatar
-   * thumbnail become the player's. Without one (or with one Bloxity refuses)
-   * the player is a Bloxity guest, shown by the guest name and thumbnail the SDK
-   * gave them, or as `GUEST_NAME`; a guest is never given a Bloxity id, so
-   * nothing they send reaches anyone's Bux. Internal ids are never shown.
+   * With a token, Bloxity is asked (an in-game token against the game's slug),
+   * and the account's display name and avatar thumbnail become the player's.
+   * Without one (or with one Bloxity refuses) the player is `GUEST_NAME` with
+   * their Bloxity guest avatar - never Bloxity's random guest name. A guest is
+   * never given a Bloxity id, so nothing they send reaches anyone's Bux.
+   * Internal ids are never shown.
    * Every call supersedes the one before it, so a slow verification of an old
    * token can never overwrite a newer answer.
    */
@@ -302,7 +304,8 @@ export class GameRoom extends Room<GameState> {
       return;
     }
 
-    void verifyBloxityToken(token, serverConfig.bloxityApiBase).then((user) => {
+    const slugs = [typeof message.gameSlug === 'string' ? message.gameSlug : '', serverConfig.bloxityGameId];
+    void verifyBloxityToken(token, serverConfig.bloxityApiBase, slugs).then((user) => {
       if (this.identityChecks.get(sessionId) !== check) return;
       const player = this.state.players.get(sessionId);
       if (!player) return;
@@ -320,9 +323,9 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
-  /** A guest: their Bloxity guest name and thumbnail, cleaned, or plain `GUEST_NAME`. */
+  /** Not signed in: `GUEST_NAME`, with their Bloxity guest avatar if it is a Bloxity-hosted one. */
   private showAsGuest(sessionId: string, player: PlayerState, message: Partial<BloxityIdentityMessage>): void {
-    player.displayName = sanitizeDisplayName(message.guestName) || GUEST_NAME;
+    player.displayName = GUEST_NAME;
     player.avatarUrl = normalizeAvatarUrl(message.guestAvatar);
     this.persist(sessionId, player);
   }

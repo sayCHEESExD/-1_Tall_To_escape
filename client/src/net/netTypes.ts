@@ -56,11 +56,12 @@ export interface NetLeaderEntry {
 
 /**
  * Who this client is, as Bloxity says: a token for a signed-in account (the
- * server verifies it), otherwise the SDK's guest name and thumbnail.
+ * server verifies it against `gameSlug`), otherwise a guest with the SDK's
+ * guest avatar thumbnail.
  */
 export interface IdentityPayload {
   token: string | null;
-  guestName: string;
+  gameSlug: string;
   guestAvatar: string;
 }
 

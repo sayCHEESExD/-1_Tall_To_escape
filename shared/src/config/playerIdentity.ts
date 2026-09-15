@@ -1,14 +1,17 @@
 /**
  * How players are SHOWN: their Bloxity display name and avatar thumbnail.
  *
- * There is no identity system of this game's own. A player is shown by the
- * profile Bloxity gives them - verified by the server for a signed-in account,
- * or the guest profile Bloxity's SDK builds for everyone else - and internal ids
- * (the browser player id, the Bloxity account id, the session id) never leave
- * the server as a name. Anyone with no Bloxity profile at all is `GUEST_NAME`.
+ * There is no identity system of this game's own. A signed-in player is shown
+ * by their Bloxity account's display name and avatar, verified by the server.
+ * Everyone else is `GUEST_NAME` - never the random name Bloxity generates for a
+ * guest - with their Bloxity guest avatar. Internal ids (the browser player id,
+ * the Bloxity account id, the session id) never leave the server as a name.
  */
 
-/** Shown for a player with no Bloxity name at all. */
+/** The id this game is registered under on Bloxity (the deploy workflow's game id). */
+export const BLOXITY_GAME_ID = 'tall-to-escape';
+
+/** Shown for every player who is not signed in to a Bloxity account. */
 export const GUEST_NAME = 'Guest';
 
 /** Longest display name shown, so a name fits a board row and a name tag. */

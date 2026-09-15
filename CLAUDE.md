@@ -172,10 +172,12 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
   `wallet.add` to the session whose token the server verified with Bloxity.
 - **Player names and avatars come from Bloxity, and only Bloxity.** There is no identity
   system of this game's own and no generated handle. The server sets `displayName` and
-  `avatarUrl` on `PlayerState`: for a token, from Bloxity's verified profile
-  (`/v1/social/profile`, `/v1/auth/me` for anything it lacks); without one, from the
-  SDK's guest profile (`auth.getGuest()`), sent as display-only `guestName` /
-  `guestAvatar`; otherwise `GUEST_NAME`. `sanitizeDisplayName` and `normalizeAvatarUrl`
+  `avatarUrl` on `PlayerState`. For a token, from Bloxity: an in-game token is a GAME
+  CAPABILITY that the account routes refuse, so it is verified the SDK's way,
+  `POST /v1/auth/game-token/verify` with the slug (the client's `gameSlug`, then
+  `BLOXITY_GAME_ID`); only then as an account token (`/v1/social/profile`, `/v1/auth/me`).
+  Not signed in is ALWAYS `GUEST_NAME` - never Bloxity's random guest name - with the
+  SDK's guest avatar (`auth.getGuest().pfp`, display-only `guestAvatar`). `sanitizeDisplayName` and `normalizeAvatarUrl`
   (static.bloxity.io only) clean both. The name tag over every character (`NameTag`,
   local and remote), the scoreboards ([avatar] Name) and every name UI read those
   replicated fields. Profiles keep the last name and thumbnail for offline board rows.

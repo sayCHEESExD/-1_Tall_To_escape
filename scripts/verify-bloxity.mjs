@@ -21,6 +21,7 @@ import {
   sanitizeDisplayName,
 } from '../shared/dist/index.js';
 import { BuxGrants, SKU_WINS } from '../server/dist/bloxity/BuxGrants.js';
+import { verifyBloxityToken } from '../server/dist/bloxity/bloxityIdentity.js';
 import { processBuxWebhook } from '../server/dist/bloxity/buxWebhook.js';
 import { LeaderboardService } from '../server/dist/progression/LeaderboardService.js';
 
@@ -151,6 +152,66 @@ console.log('\nplayer identity: Bloxity display names and avatars, never interna
     shown.length === 6 && shown.every((row) => !/@|_[0-9A-F]{4}$|p_internal|session-/.test(row.name)),
     shown.map((row) => row.name).join(', '),
   );
+}
+
+console.log("\ntoken verification: a signed-in player is their Bloxity account, not Guest\n");
+{
+  const realFetch = globalThis.fetch;
+  const reply = (status, body = {}) =>
+    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  const pathOf = (url) => new URL(url).pathname;
+  try {
+    // An in-game token: Bloxity's account routes refuse it, like the live API does.
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      const path = pathOf(url);
+      calls.push({ path, method: init.method ?? 'GET', body: init.body ?? '', auth: init.headers?.Authorization });
+      if (path === '/v1/auth/game-token/verify') {
+        return JSON.parse(init.body).gameSlug === 'tall-to-escape'
+          ? reply(200, { user: { _id: 'acc-1', username: 'chicken877', displayName: 'Chicken 877', pfp: '/pfps/s3_h12.png' } })
+          : reply(401, { code: 'GAME_TOKEN_INVALID' });
+      }
+      return reply(401, { code: 'GAME_TOKEN_REQUIRED' });
+    };
+    const user = await verifyBloxityToken('game-capability', 'https://api.test', ['tall-to-escape']);
+    check(
+      "an in-game token is verified the SDK's way: POST /v1/auth/game-token/verify with the game slug",
+      calls[0]?.path === '/v1/auth/game-token/verify' && calls[0].method === 'POST' &&
+        JSON.parse(calls[0].body).gameSlug === 'tall-to-escape' && calls[0].auth === 'Bearer game-capability',
+    );
+    check('the signed-in player is shown by their Bloxity display name', user?.displayName === 'Chicken 877' && user?.id === 'acc-1');
+    check('with their Bloxity avatar thumbnail', user?.avatarUrl === 'https://static.bloxity.io/img/pfps/s3_h12.png?width=128&quality=85');
+
+    calls.length = 0;
+    const second = await verifyBloxityToken('game-capability', 'https://api.test', ['tall-escape', 'tall-to-escape']);
+    check('a slug that refuses the token is followed by the next one', second?.displayName === 'Chicken 877' && calls.length === 2);
+
+    // A plain account token (not issued inside a game).
+    globalThis.fetch = async (url) => {
+      const path = pathOf(url);
+      if (path === '/v1/social/profile') return reply(200, { user: { _id: 'acc-2', username: 'owl', displayName: 'Night Owl' } });
+      if (path === '/v1/auth/me') return reply(200, { user: { _id: 'acc-2', pfp: 'https://static.bloxity.io/img/pfps/s5.png' } });
+      return reply(401);
+    };
+    const account = await verifyBloxityToken('account-token', 'https://api.test', ['tall-to-escape']);
+    check(
+      'an account token still verifies through the profile routes',
+      account?.displayName === 'Night Owl' && account?.avatarUrl === 'https://static.bloxity.io/img/pfps/s5.png',
+    );
+
+    globalThis.fetch = async () => reply(401);
+    check('a token Bloxity refuses everywhere is no account', (await verifyBloxityToken('bad', 'https://api.test', ['tall-to-escape'])) === null);
+
+    const sent = [];
+    globalThis.fetch = async (url, init = {}) => {
+      if (pathOf(url) === '/v1/auth/game-token/verify') sent.push(JSON.parse(init.body).gameSlug);
+      return reply(401);
+    };
+    await verifyBloxityToken('x', 'https://api.test', ['../evil', '', 'tall-to-escape', 'tall-to-escape']);
+    check('only well-formed slugs are tried, once each', sent.length === 1 && sent[0] === 'tall-to-escape', sent.join(','));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 console.log(`\n${failures === 0 ? 'bloxity verified' : `${failures} FAILURE(S)`}\n`);

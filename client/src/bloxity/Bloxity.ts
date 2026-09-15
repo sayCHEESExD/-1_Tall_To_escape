@@ -1,3 +1,4 @@
+import { BLOXITY_GAME_ID } from '@highjump/shared';
 import { logger } from '../util/logger.js';
 import {
   DEFAULT_PROPORTIONS,
@@ -19,7 +20,7 @@ const SCOPE = 'bloxity';
  * override it at build time; the literal is what a local `npm run dev` uses.
  */
 export const GAME_SLUG =
-  (import.meta.env['VITE_BLOXITY_GAME_ID'] as string | undefined)?.trim() || 'tall-escape';
+  (import.meta.env['VITE_BLOXITY_GAME_ID'] as string | undefined)?.trim() || BLOXITY_GAME_ID;
 
 /**
  * Optional backend overrides, unset in every normal build.

@@ -83,7 +83,7 @@ export class NetworkClient {
   sendIdentity(identity: IdentityPayload): void {
     const message: BloxityIdentityMessage = {
       token: identity.token ?? '',
-      guestName: identity.guestName,
+      gameSlug: identity.gameSlug,
       guestAvatar: identity.guestAvatar,
     };
     this.room?.send(MessageType.BloxityIdentity, message);
@@ -119,8 +119,9 @@ export class NetworkClient {
           playerId,
           // Optional. Verified by the server with Bloxity, never trusted as-is.
           bloxityToken: identity?.token ?? undefined,
-          // Display only, for a Bloxity guest; cleaned by the server.
-          guestName: identity?.guestName || undefined,
+          // The slug an in-game token was issued for, so the server can verify it.
+          gameSlug: identity?.gameSlug || undefined,
+          // Display only, for a guest; accepted by the server only as a Bloxity image.
           guestAvatar: identity?.guestAvatar || undefined,
         });
         break;
