@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/ui/trophy.png" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>+1 Tall Escape</title>
+    <!--
+      The Bloxity SDK (window.Legion.SDK). A plain script BEFORE the module
+      bundle, so it exists when the game initialises it. If the CDN is
+      unreachable the game still boots: every SDK call is guarded.
+    -->
+    <script src="https://sdk.bloxity.io/legion-sdk.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        height: 100dvh;
+        overflow: hidden;
+        touch-action: none;
+        background: #7cc8ff;
+        font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body.hj-cursor-hidden, body.hj-cursor-hidden * { cursor: none !important; }
+      #app { position: fixed; inset: 0; touch-action: none; }
+      #app canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 10px;
+        text-align: center;
+        color: #0e2a4a;
+        background: radial-gradient(circle at 50% 60%, #bfe6ff 0%, #4fa8ff 70%);
+        font-size: 14px;
+        z-index: 60;
+      }
+      #boot[hidden] { display: none; }
+      #boot.notice {
+        inset: auto 12px 12px auto;
+        place-content: start;
+        padding: 12px 14px;
+        max-width: 44ch;
+        border: 2px solid #7f1d1d;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        pointer-events: none;
+      }
+      #boot.notice #boot-logo { display: none; }
+      #boot-logo { justify-self: center; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.3)); }
+      #boot h1 {
+        font-family: "Arial Black", Arial, sans-serif;
+        font-size: 22px;
+        color: #ffd23d;
+        text-shadow: 2px 0 0 #12181f, -2px 0 0 #12181f, 0 2px 0 #12181f, 0 -2px 0 #12181f;
+      }
+      #boot .err { color: #b91c1c; max-width: 60ch; white-space: pre-wrap; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="boot">
+      <img id="boot-logo" src="/ui/trophy.png" alt="" height="110" />
+      <h1>+1 Tall Escape</h1>
+      <p id="boot-status">Loading&hellip;</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
