@@ -13,6 +13,7 @@ import {
 } from 'three';
 import { PALETTE } from '../config/worldVisuals.js';
 import type { LeaderboardSnapshot, NetLeaderEntry } from '../net/netTypes.js';
+import { avatarNow, drawAvatar, loadAvatar } from '../ui/avatarImages.js';
 import { CanvasSign } from './CanvasSign.js';
 import { texturedBox } from './texturedBox.js';
 
@@ -40,7 +41,8 @@ const FONT = '"Arial Black", "Segoe UI", system-ui, sans-serif';
 /**
  * The three leaderboards against the hub's RIGHT wall, facing into the hub.
  * World-space: a thing you walk up to and read. Every figure is the server's;
- * a panel redraws only when its standings actually change.
+ * each row is [rank] [Bloxity avatar] Display Name, value. A panel redraws only
+ * when its standings change or an avatar thumbnail finishes loading.
  */
 export class Scoreboard {
   readonly root = new Group();
@@ -113,6 +115,8 @@ class PanelSurface {
   private readonly material: MeshBasicMaterial;
   private readonly geometry: PlaneGeometry;
   private signature = '-';
+  private rows: readonly NetLeaderEntry[] = [];
+  private disposed = false;
 
   constructor(private readonly spec: BoardSpec, width: number, height: number) {
     this.category = spec.category;
@@ -129,14 +133,16 @@ class PanelSurface {
   }
 
   apply(rows: readonly NetLeaderEntry[]): void {
-    const signature = rows.map((row) => `${row.handle}:${row.value}`).join('|');
+    const signature = rows.map((row) => `${row.name}:${row.avatarUrl}:${row.value}`).join('|');
     if (signature === this.signature) return;
     this.signature = signature;
+    this.rows = rows;
     this.draw(rows);
     this.texture.needsUpdate = true;
   }
 
   dispose(): void {
+    this.disposed = true;
     this.texture.dispose();
     this.material.dispose();
     this.geometry.dispose();
@@ -153,7 +159,7 @@ class PanelSurface {
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    if (!rows.some((row) => row.handle)) {
+    if (!rows.some((row) => row.name)) {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#9fb3c8';
       ctx.font = `900 ${rowH * 0.5}px ${FONT}`;
@@ -168,7 +174,7 @@ class PanelSurface {
         ctx.fillStyle = PALETTE.boardStripe;
         ctx.fillRect(pad * 0.5, pad + rowH * i, width - pad, rowH);
       }
-      if (!row || !row.handle) continue;
+      if (!row || !row.name) continue;
       const size = rowH * 0.5;
 
       ctx.textAlign = 'left';
@@ -182,11 +188,28 @@ class PanelSurface {
       ctx.fillStyle = PALETTE.boardValue;
       ctx.fillText(value, width - pad, y);
 
+      // [Bloxity avatar] Display Name
+      const radius = rowH * 0.36;
+      const avatarX = pad + width * 0.13 + radius;
+      this.ensureAvatar(row.avatarUrl);
+      drawAvatar(ctx, avatarNow(row.avatarUrl), avatarX, y, radius, RANK_COLOURS[i] ?? '#ffffff');
+
+      const nameX = avatarX + radius + width * 0.02;
       ctx.textAlign = 'left';
-      fit(ctx, row.handle, width * 0.52, size);
+      fit(ctx, row.name, width * 0.7 - nameX, size);
       ctx.fillStyle = PALETTE.boardName;
-      ctx.fillText(row.handle, pad + width * 0.14, y);
+      ctx.fillText(row.name, nameX, y);
     }
+  }
+
+  /** Repaint once a row's thumbnail arrives. Each URL loads once, shared with the name tags. */
+  private ensureAvatar(url: string): void {
+    if (avatarNow(url) !== undefined) return;
+    void loadAvatar(url).then(() => {
+      if (this.disposed) return;
+      this.draw(this.rows);
+      this.texture.needsUpdate = true;
+    });
   }
 
   private format(value: number): string {

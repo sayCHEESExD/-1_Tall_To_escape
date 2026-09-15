@@ -168,6 +168,11 @@ export class Bloxity {
     return guard('auth.getToken', (api) => api.auth?.getToken?.() ?? null) ?? null;
   }
 
+  /** Bloxity's guest profile - its guest name and avatar thumbnail - while nobody is signed in. */
+  getGuest(): LegionUser | null {
+    return guard('auth.getGuest', (api) => api.auth?.getGuest?.() ?? null) ?? null;
+  }
+
   isLoggedIn(): boolean {
     return guard('auth.isLoggedIn', (api) => api.auth?.isLoggedIn?.() ?? false) ?? false;
   }

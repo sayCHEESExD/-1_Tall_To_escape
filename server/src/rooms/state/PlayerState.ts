@@ -10,10 +10,14 @@ import { SPAWN_POSITION, SPAWN_ROTATION_Y } from '@highjump/shared';
  */
 export class PlayerState extends Schema {
   @type('string') sessionId = '';
-  /** Derived from the player's id; the id itself never leaves the server. */
-  @type('string') handle = '';
-  /** The Bloxity display name, set ONLY from a token the server verified. '' for guests. */
+  /**
+   * The name shown for this player everywhere: their Bloxity display name
+   * (verified by the server for a signed-in account), their Bloxity guest name,
+   * or `GUEST_NAME`. Never an internal id - those never leave the server.
+   */
   @type('string') displayName = '';
+  /** Their Bloxity avatar thumbnail (static.bloxity.io only), or '' for the default. */
+  @type('string') avatarUrl = '';
 
   @type('float32') x: number = SPAWN_POSITION.x;
   @type('float32') y: number = SPAWN_POSITION.y;

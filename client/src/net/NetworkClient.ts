@@ -15,6 +15,7 @@ import { clientConfig } from '../config/clientConfig.js';
 import { logger } from '../util/logger.js';
 import type {
   ConnectionStatus,
+  IdentityPayload,
   LeaderboardSnapshot,
   NetGameState,
   NetLeaderEntry,
@@ -66,21 +67,25 @@ export class NetworkClient {
   private room: Room<NetGameState> | null = null;
 
   /**
-   * Where the join gets the Bloxity token from. A callback rather than a stored
-   * value, so a logout between two joins can never send the previous token.
+   * Where the join gets the Bloxity identity from. A callback rather than a
+   * stored value, so a logout between two joins can never send the previous token.
    */
-  private identity: (() => string | null) | null = null;
+  private identity: (() => IdentityPayload) | null = null;
 
   constructor(private readonly handlers: NetworkHandlers = {}) {}
 
-  /** Where to read the Bloxity token at join time. */
-  setIdentityProvider(provider: () => string | null): void {
+  /** Where to read the Bloxity identity at join time. */
+  setIdentityProvider(provider: () => IdentityPayload): void {
     this.identity = provider;
   }
 
-  /** Tell the room about a login or logout that happened after joining. */
-  sendIdentity(token: string | null): void {
-    const message: BloxityIdentityMessage = { token: token ?? '' };
+  /** Tell the room about a login, logout or new avatar that happened after joining. */
+  sendIdentity(identity: IdentityPayload): void {
+    const message: BloxityIdentityMessage = {
+      token: identity.token ?? '',
+      guestName: identity.guestName,
+      guestAvatar: identity.guestAvatar,
+    };
     this.room?.send(MessageType.BloxityIdentity, message);
   }
 
@@ -109,10 +114,14 @@ export class NetworkClient {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
+        const identity = this.identity?.();
         this.room = await this.client.joinOrCreate<NetGameState>(ROOM_NAME, {
           playerId,
           // Optional. Verified by the server with Bloxity, never trusted as-is.
-          bloxityToken: this.identity?.() ?? undefined,
+          bloxityToken: identity?.token ?? undefined,
+          // Display only, for a Bloxity guest; cleaned by the server.
+          guestName: identity?.guestName || undefined,
+          guestAvatar: identity?.guestAvatar || undefined,
         });
         break;
       } catch (error) {
@@ -174,7 +183,7 @@ export class NetworkClient {
       const out: NetLeaderEntry[] = [];
       for (let i = 0; i < rows.length; i += 1) {
         const row = rows[i];
-        if (row) out.push({ handle: row.handle, value: row.value });
+        if (row) out.push({ name: row.name, avatarUrl: row.avatarUrl, value: row.value });
       }
       return out;
     };

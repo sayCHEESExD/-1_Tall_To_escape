@@ -102,6 +102,8 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
 - The camera and fog pull back with the drawn leg length (`setLegExtra`).
 - Equipped pets follow their owner (`PetCompanions`, world space, local AND remote).
 - The landing impact (`LandingDebris`, `impact` sound, camera `shake`) is local only.
+- Eating loops `assets/audio/eat.mp3` while the local player eats (`AudioManager.setEating`,
+  faded in and out); the synthesised chomp only covers the moment before it decodes.
 - World textures are drawn on canvases (`WorldTextures`). Food models, pets, tables
   and eggs are primitives. The only image files are the player texture and the HUD
   icons in `assets/ui/`; the food icon is inline SVG. The old biome pictures and
@@ -168,6 +170,17 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
   `BLOXITY_WEBHOOK_SECRET`; without it every delivery is refused). The SKU -> Wins table
   is `server/src/bloxity/BuxGrants.ts`; grants are queued to disk, then applied through
   `wallet.add` to the session whose token the server verified with Bloxity.
+- **Player names and avatars come from Bloxity, and only Bloxity.** There is no identity
+  system of this game's own and no generated handle. The server sets `displayName` and
+  `avatarUrl` on `PlayerState`: for a token, from Bloxity's verified profile
+  (`/v1/social/profile`, `/v1/auth/me` for anything it lacks); without one, from the
+  SDK's guest profile (`auth.getGuest()`), sent as display-only `guestName` /
+  `guestAvatar`; otherwise `GUEST_NAME`. `sanitizeDisplayName` and `normalizeAvatarUrl`
+  (static.bloxity.io only) clean both. The name tag over every character (`NameTag`,
+  local and remote), the scoreboards ([avatar] Name) and every name UI read those
+  replicated fields. Profiles keep the last name and thumbnail for offline board rows.
+  Internal ids (browser player id, Bloxity account id, session id) are never shown.
+  Thumbnails load once per URL with CORS (`avatarImages.ts`) and draw into canvases.
 - Avatar cosmetics dress the LOCAL character only (`BloxityAvatar`): a skin or body part
   swaps in Bloxity's `player.glb` via `PlayerCharacter.setModel` (which rebuilds the
   stilts and held food on the new bones); hats/back hang on bones.

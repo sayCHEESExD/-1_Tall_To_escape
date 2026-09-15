@@ -21,6 +21,7 @@ const REQUIRED = [
   'ui/shop.png',
   'audio/background.mp3',
   'audio/jump.mp3',
+  'audio/eat.mp3',
 ];
 
 /** Present but pruned from the build by vite.config.ts. */

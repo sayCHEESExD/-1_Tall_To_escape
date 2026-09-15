@@ -3,7 +3,10 @@ import { LEADERBOARD_SIZE } from '@highjump/shared';
 import { PlayerState } from './PlayerState.js';
 
 export class LeaderEntry extends Schema {
-  @type('string') handle = '';
+  /** The player's Bloxity display name (or `GUEST_NAME`). '' for an empty row. */
+  @type('string') name = '';
+  /** Their Bloxity avatar thumbnail, or '' for the default. */
+  @type('string') avatarUrl = '';
   @type('float64') value = 0;
 }
 

@@ -31,6 +31,9 @@ class ProfileStore {
   restore(playerId: string, player: PlayerState): boolean {
     const profile = this.profiles.get(playerId);
     if (!profile) return false;
+    // Shown until Bloxity answers for this session, then replaced by what it says.
+    player.displayName = profile.displayName;
+    player.avatarUrl = profile.avatarUrl;
     player.level = Math.max(1, Math.floor(profile.level));
     player.food = profile.food;
     player.rebirths = Math.floor(profile.rebirths);
@@ -47,6 +50,8 @@ class ProfileStore {
   save(playerId: string, player: PlayerState): void {
     if (!playerId) return;
     this.profiles.set(playerId, {
+      displayName: player.displayName,
+      avatarUrl: player.avatarUrl,
       level: player.level,
       food: player.food,
       rebirths: player.rebirths,

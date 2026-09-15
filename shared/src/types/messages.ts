@@ -50,10 +50,17 @@ export interface PetHatchedMessage {
 }
 
 /**
- * "My Bloxity token is now this." A TOKEN, not an id: the server resolves it
+ * "My Bloxity identity is now this." A TOKEN, not an id: the server resolves it
  * with Bloxity, so nobody can claim another account's paid-for Bux grants by
- * naming its id. Empty means logged out.
+ * naming its id. Empty means not signed in.
+ *
+ * Without a token, the guest name and thumbnail Bloxity's SDK gave this player
+ * (`auth.getGuest()`) are sent instead. They are DISPLAY ONLY: cleaned by the
+ * server, the thumbnail only ever a Bloxity-hosted image, and never tied to an
+ * account, so they can reach nobody's Bux.
  */
 export interface BloxityIdentityMessage {
   token: string;
+  guestName?: string;
+  guestAvatar?: string;
 }

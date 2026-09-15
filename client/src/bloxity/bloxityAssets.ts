@@ -14,8 +14,11 @@ export const PLAYER_GLB_URL = `${AVATAR_CDN}/player.glb`;
 /** The skin Bloxity's own renderer falls back to when none is equipped. */
 export const DEFAULT_SKIN_ID = '0';
 
-/** Fallback portrait for accounts and friends without one. */
-export const DEFAULT_PFP_URL = 'https://static.bloxity.io/img/pfps/0.png?width=128&quality=85';
+/**
+ * Fallback portrait for accounts and friends without one: Bloxity's default
+ * character thumbnail (`pfps/0.png` redirects to a 404; `pfps/s0.png` exists).
+ */
+export { DEFAULT_AVATAR_URL as DEFAULT_PFP_URL } from '@highjump/shared';
 
 export const hatUrls = (id: string): { mesh: string; texture: string } => ({
   mesh: `${AVATAR_CDN}/items/hats/${id}.obj`,

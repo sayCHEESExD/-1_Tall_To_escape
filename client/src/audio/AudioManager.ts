@@ -10,7 +10,11 @@ const AUDIO_URL = {
   background: '/audio/background.mp3',
   jump: '/audio/jump.mp3',
   fall: '/audio/fall.mp3',
+  eat: '/audio/eat.mp3',
 } as const;
+
+/** Peak gain of the eating loop on the effects bus. */
+const EAT_GAIN = 0.9;
 
 const MAX_VOICES = 12;
 
@@ -50,8 +54,8 @@ const COOLDOWNS: Readonly<Record<SoundName, number>> = {
 /**
  * Every sound in the game.
  *
- * The supplied files - the background track, the jump and the landing impact
- * (`fall.mp3`) - are used as the real audio; everything else is synthesised, because oscillators cost
+ * The supplied files - the background track, the jump, the landing impact
+ * (`fall.mp3`) and eating (`eat.mp3`) - are used as the real audio; everything else is synthesised, because oscillators cost
  * hundreds of bytes against a 12 MB budget. The music is STREAMED through an
  * `<audio>` element (a decoded 2 MB mp3 would be tens of megabytes of samples)
  * and paused, not merely silenced, when muted.
@@ -67,6 +71,11 @@ export class AudioManager {
   private musicElement: HTMLAudioElement | null = null;
   private jumpBuffer: AudioBuffer | null = null;
   private fallBuffer: AudioBuffer | null = null;
+  private eatBuffer: AudioBuffer | null = null;
+  /** The eating loop while it plays, and the gain it fades on. */
+  private eatSource: AudioBufferSourceNode | null = null;
+  private eatGain: GainNode | null = null;
+  private eatLevel = -1;
   private loadingSamples = false;
   private voices = 0;
   private readonly lastPlayed = new Map<SoundName, number>();
@@ -210,7 +219,60 @@ export class AudioManager {
     }
   }
 
+  /** True once `eat.mp3` has decoded; until then eating uses the synthesised chomp. */
+  get hasEatSample(): boolean {
+    return this.eatBuffer !== null;
+  }
+
+  /**
+   * Eating plays `eat.mp3` on a LOOP while the player eats, faded in and out,
+   * rather than one-shot per bite: the clip is a couple of seconds of chewing,
+   * and restarting it every bite would stutter. Call every frame; the audio
+   * graph is only touched when the level actually changes.
+   */
+  setEating(active: boolean, intensity = 1): void {
+    const ctx = this.context;
+    if (!ctx || !this.sfxBus || !this.eatBuffer) return;
+    const level =
+      active && ctx.state === 'running' ? EAT_GAIN * (0.6 + 0.4 * Math.min(Math.max(intensity, 0), 1)) : 0;
+    if (level === this.eatLevel) return;
+    this.eatLevel = level;
+    const now = ctx.currentTime;
+
+    if (level > 0 && !this.eatSource) {
+      const source = ctx.createBufferSource();
+      source.buffer = this.eatBuffer;
+      source.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(gain);
+      gain.connect(this.sfxBus);
+      source.onended = () => {
+        source.disconnect();
+        gain.disconnect();
+      };
+      source.start(now);
+      this.eatSource = source;
+      this.eatGain = gain;
+    }
+    if (!this.eatSource || !this.eatGain) return;
+
+    this.eatGain.gain.cancelScheduledValues(now);
+    this.eatGain.gain.setTargetAtTime(level, now, level > 0 ? 0.05 : 0.12);
+    if (level === 0) {
+      this.eatSource.stop(now + 0.6);
+      this.eatSource = null;
+      this.eatGain = null;
+    }
+  }
+
   dispose(): void {
+    try {
+      this.eatSource?.stop();
+    } catch {
+      /* already stopped */
+    }
+    this.eatSource = null;
     if (this.musicElement) {
       this.musicElement.pause();
       this.musicElement.removeAttribute('src');
@@ -252,7 +314,11 @@ export class AudioManager {
         return null;
       }
     };
-    [this.jumpBuffer, this.fallBuffer] = await Promise.all([load(AUDIO_URL.jump), load(AUDIO_URL.fall)]);
+    [this.jumpBuffer, this.fallBuffer, this.eatBuffer] = await Promise.all([
+      load(AUDIO_URL.jump),
+      load(AUDIO_URL.fall),
+      load(AUDIO_URL.eat),
+    ]);
   }
 
   private playBuffer(buffer: AudioBuffer | null, at: number, gain: number, rate: number): boolean {

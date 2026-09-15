@@ -6,9 +6,10 @@ import type { MapSchema } from '@colyseus/schema';
  */
 export interface NetPlayerState {
   sessionId: string;
-  handle: string;
-  /** Verified Bloxity display name, or '' for a guest. */
+  /** The Bloxity display name (or guest name, or "Guest"). Never an internal id. */
   displayName: string;
+  /** Bloxity avatar thumbnail, or '' for the default. */
+  avatarUrl: string;
   x: number;
   y: number;
   z: number;
@@ -47,8 +48,20 @@ export interface NetPlayerState {
 }
 
 export interface NetLeaderEntry {
-  handle: string;
+  /** Bloxity display name; '' for an empty row. */
+  name: string;
+  avatarUrl: string;
   value: number;
+}
+
+/**
+ * Who this client is, as Bloxity says: a token for a signed-in account (the
+ * server verifies it), otherwise the SDK's guest name and thumbnail.
+ */
+export interface IdentityPayload {
+  token: string | null;
+  guestName: string;
+  guestAvatar: string;
 }
 
 export interface NetLeaderboardState {

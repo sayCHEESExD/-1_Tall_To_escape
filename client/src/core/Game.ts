@@ -1,4 +1,5 @@
 import {
+  GUEST_NAME,
   MessageType,
   STAIRS,
   STAIR_START_Z,
@@ -19,7 +20,7 @@ import { ThirdPersonCamera } from '../camera/ThirdPersonCamera.js';
 import { clientConfig } from '../config/clientConfig.js';
 import { InputManager } from '../input/InputManager.js';
 import { NetworkClient } from '../net/NetworkClient.js';
-import type { ConnectionStatus, NetPlayerState } from '../net/netTypes.js';
+import type { ConnectionStatus, IdentityPayload, NetPlayerState } from '../net/netTypes.js';
 import { LocalPlayer } from '../player/LocalPlayer.js';
 import { playerModelLoader } from '../player/PlayerModelLoader.js';
 import { RemotePlayerManager } from '../player/RemotePlayerManager.js';
@@ -131,6 +132,8 @@ export class Game {
   private pendingLook: { equipped: LegionEquipped; proportions: LegionProportions } | null = null;
   /** Remote players already announced to Bloxity, so a name is toasted once. */
   private readonly announced = new Set<string>();
+  /** The identity last sent to the room, so a login and its avatar push send it once. */
+  private lastIdentity = '';
   private joinedAt = 0;
   /** FPS readout for the portal's `show_fps` setting. */
   private readonly fpsReadout: HTMLDivElement;
@@ -200,12 +203,14 @@ export class Game {
         if (this.bloxityAvatar) this.bloxityAvatar.apply(equipped, proportions);
         else this.pendingLook = { equipped, proportions };
         this.bloxityPanel.refreshAvatar();
+        // A new look is a new avatar thumbnail for everyone else's name tag and board.
+        this.syncIdentity();
       },
       // A login or logout after joining. Before joining this is a no-op and the
-      // join itself carries the token.
-      identityChanged: (_user, token) => this.network.sendIdentity(token),
+      // join itself carries the identity.
+      identityChanged: () => this.syncIdentity(),
     });
-    this.network.setIdentityProvider(() => this.bloxity.getToken());
+    this.network.setIdentityProvider(() => this.identityPayload());
     this.bloxityPanel = new BloxityPanel(container, this.bloxity);
 
     this.rebirthPanel = new RebirthPanel(container, () => this.network.requestRebirth());
@@ -445,15 +450,36 @@ export class Game {
   }
 
   /**
-   * Tell Bloxity who is here, once per player, by their Bloxity name. Only
-   * names the SERVER verified are announced - a guest has no Bloxity identity
-   * for the portal to match against the friends list.
+   * Tell Bloxity who is here, once per player, by their Bloxity name. A
+   * nameless "Guest" is not announced - there is nobody for the portal to match
+   * against the friends list.
    */
   private announce(sessionId: string, state: NetPlayerState): void {
-    if (!state.displayName || this.announced.has(sessionId)) return;
+    if (!state.displayName || state.displayName === GUEST_NAME || this.announced.has(sessionId)) return;
     this.announced.add(sessionId);
     if (performance.now() - this.joinedAt < IN_ROOM_WINDOW_MS) this.bloxity.playerInRoom(state.displayName);
     else this.bloxity.playerJoined(state.displayName);
+  }
+
+  /**
+   * Who this client is, from Bloxity: the token of a signed-in account (the
+   * server verifies it and takes the account's name and thumbnail from Bloxity),
+   * or else the guest name and thumbnail Bloxity's SDK built for this player.
+   */
+  private identityPayload(): IdentityPayload {
+    const token = this.bloxity.getToken();
+    if (token) return { token, guestName: '', guestAvatar: '' };
+    const guest = this.bloxity.getGuest();
+    return { token: null, guestName: guest?.displayName || guest?.username || '', guestAvatar: guest?.pfp || '' };
+  }
+
+  /** Send the identity to the room when it actually changed. */
+  private syncIdentity(): void {
+    const identity = this.identityPayload();
+    const key = JSON.stringify(identity);
+    if (key === this.lastIdentity) return;
+    this.lastIdentity = key;
+    this.network.sendIdentity(identity);
   }
 
   /** Everything the server says about us. Rendered, reconciled, never derived. */
@@ -461,6 +487,9 @@ export class Game {
     const player = this.localPlayer;
     if (!player) return;
     this.localState = state;
+
+    // Our own name tag shows exactly what everyone else sees: the server's.
+    player.character.setIdentity(state.displayName, state.avatarUrl);
 
     player.setProgression(state.jumpVelocity, state.gravity, state.rebirths, state.legReach);
     player.character.setCosmetics(state.trailSlot);

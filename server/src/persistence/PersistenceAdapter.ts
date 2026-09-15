@@ -4,8 +4,13 @@
  * The DERIVING facts only: height, leg reach, jump physics and food per
  * step are recomputed from these on load through the same formulas a
  * live session uses, so a tuning change reaches returning players.
+ *
+ * `displayName` and `avatarUrl` are the Bloxity name and thumbnail last shown
+ * for the player, kept so the boards can still show who an offline player is.
  */
 export interface StoredProfile {
+  displayName: string;
+  avatarUrl: string;
   level: number;
   food: number;
   rebirths: number;

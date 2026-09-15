@@ -14,6 +14,8 @@ export interface LegionUser {
   readonly email?: string;
   readonly pfp?: string;
   readonly avatar?: string;
+  /** True for the guest profile `auth.getGuest()` builds for a player who is not signed in. */
+  readonly isGuest?: boolean;
 }
 
 /**
@@ -114,6 +116,8 @@ export interface LegionSdk {
 
   auth?: {
     getUser(): LegionUser | null;
+    /** The guest profile (name, pfp) while nobody is signed in; null when signed in. */
+    getGuest?(): LegionUser | null;
     getToken(): string | null;
     isLoggedIn(): boolean;
     showAuthPopup(): Promise<LegionUser | null>;

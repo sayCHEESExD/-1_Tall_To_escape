@@ -230,14 +230,12 @@ export class BloxityPanel {
     pfp.alt = '';
     pfp.draggable = false;
 
-    // Other people's names are text, never markup.
+    // Other people's names are text, never markup. Shown by Bloxity display name only.
     const name = document.createElement('div');
     name.className = 'hj-friend__name';
     const display = document.createElement('b');
     display.textContent = friend.displayName || friend.username;
-    const handle = document.createElement('small');
-    handle.textContent = `@${friend.username}`;
-    name.append(display, handle);
+    name.append(display);
 
     const status = document.createElement('span');
     status.className = 'hj-friend__status';

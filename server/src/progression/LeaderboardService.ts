@@ -1,4 +1,4 @@
-import { LEADERBOARD_SIZE, handleFor, resolveHeight } from '@highjump/shared';
+import { GUEST_NAME, LEADERBOARD_SIZE, resolveHeight } from '@highjump/shared';
 import type { LeaderEntry, LeaderboardState } from '../rooms/state/GameState.js';
 import type { PlayerState } from '../rooms/state/PlayerState.js';
 import { profileStore } from './ProfileStore.js';
@@ -6,7 +6,9 @@ import { profileStore } from './ProfileStore.js';
 const REFRESH_SECONDS = 2;
 
 interface Candidate {
-  readonly handle: string;
+  /** The Bloxity display name shown on the board. Never an internal id. */
+  readonly name: string;
+  readonly avatarUrl: string;
   readonly time: number;
   readonly wins: number;
   readonly height: number;
@@ -17,6 +19,8 @@ interface Candidate {
  * The Most Wins, Most Height and Most Time boards. Every figure is the
  * server's: stored profiles merged with live state (live figures where both
  * exist). Height is derived from the stored level, never stored itself.
+ * Rows show each player's Bloxity display name and avatar thumbnail - the
+ * live ones for players in the room, the last saved ones for everyone else.
  * Rebuilt on a slow timer - nobody reads a board twenty times a second.
  */
 export class LeaderboardService {
@@ -35,7 +39,8 @@ export class LeaderboardService {
     const byId = new Map<string, Candidate>();
     for (const [id, profile] of profileStore.entries()) {
       byId.set(id, {
-        handle: handleFor(id),
+        name: profile.displayName || GUEST_NAME,
+        avatarUrl: profile.avatarUrl,
         time: profile.playSeconds,
         wins: profile.wins,
         height: resolveHeight(profile.level, profile.rebirths),
@@ -46,7 +51,8 @@ export class LeaderboardService {
       const id = playerIds.get(sessionId);
       if (!id) continue;
       byId.set(id, {
-        handle: handleFor(id),
+        name: player.displayName || GUEST_NAME,
+        avatarUrl: player.avatarUrl,
         time: player.playSeconds,
         wins: player.wins,
         height: player.height,
@@ -78,9 +84,11 @@ const fill = (
     const entry = into[i];
     if (!entry) continue;
     const candidate = ranked[i];
-    const handle = candidate ? candidate.handle : '';
+    const name = candidate ? candidate.name : '';
+    const avatarUrl = candidate ? candidate.avatarUrl : '';
     const value = candidate ? Math.floor(pick(candidate)) : 0;
-    if (entry.handle !== handle) entry.handle = handle;
+    if (entry.name !== name) entry.name = name;
+    if (entry.avatarUrl !== avatarUrl) entry.avatarUrl = avatarUrl;
     if (entry.value !== value) entry.value = value;
   }
 };

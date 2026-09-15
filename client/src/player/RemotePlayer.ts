@@ -69,6 +69,7 @@ export class RemotePlayer {
     if (!this.wasGrounded && state.grounded) this.input.landed = true;
     this.wasGrounded = state.grounded;
 
+    this.character.setIdentity(state.displayName, state.avatarUrl);
     this.character.setCosmetics(state.trailSlot);
     this.character.setFood(bestOwnedFood(state.ownedFoods).slot);
     this.character.setPets(state.pets);

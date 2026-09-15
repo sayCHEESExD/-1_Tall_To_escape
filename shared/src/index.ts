@@ -11,7 +11,7 @@ export * from './config/course.js';
 export * from './config/dining.js';
 export * from './config/foodRate.js';
 export * from './config/foods.js';
-export * from './config/handles.js';
+export * from './config/playerIdentity.js';
 export * from './config/movement.js';
 export * from './config/pets.js';
 export * from './config/progression.js';

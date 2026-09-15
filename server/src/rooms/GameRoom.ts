@@ -4,7 +4,9 @@ import {
   MessageType,
   SPAWN_POSITION,
   SPAWN_ROTATION_Y,
-  handleFor,
+  GUEST_NAME,
+  normalizeAvatarUrl,
+  sanitizeDisplayName,
   type BloxityIdentityMessage,
   type ClaimWinMessage,
   type IndexMessage,
@@ -44,6 +46,9 @@ interface JoinOptions {
   playerId?: string;
   /** A Bloxity token, verified by the server with Bloxity. Never an id. */
   bloxityToken?: string;
+  /** Without a token: the Bloxity guest name and thumbnail, display only. */
+  guestName?: string;
+  guestAvatar?: string;
 }
 
 /**
@@ -136,7 +141,7 @@ export class GameRoom extends Room<GameState> {
     );
 
     this.onMessage(MessageType.BloxityIdentity, (client, message: BloxityIdentityMessage) =>
-      this.resolveIdentity(client.sessionId, typeof message?.token === 'string' ? message.token : ''),
+      this.resolveIdentity(client.sessionId, message && typeof message === 'object' ? message : { token: '' }),
     );
 
     this.setSimulationInterval((deltaMs) => this.tick(deltaMs / 1000), serverConfig.patchRateMs);
@@ -157,7 +162,6 @@ export class GameRoom extends Room<GameState> {
 
     const playerId = typeof options.playerId === 'string' ? options.playerId.slice(0, 64) : '';
     if (playerId) this.playerIds.set(client.sessionId, playerId);
-    player.handle = handleFor(playerId || client.sessionId);
 
     // Restore BEFORE deriving: height, leg reach and rates follow from it.
     const restored = playerId ? profileStore.restore(playerId, player) : false;
@@ -167,10 +171,14 @@ export class GameRoom extends Room<GameState> {
     this.food.initialise(player);
     this.placeAt(client, player, 'join');
 
-    // In the background: a join must not wait on a round trip to Bloxity.
-    if (typeof options.bloxityToken === 'string' && options.bloxityToken) {
-      this.resolveIdentity(client.sessionId, options.bloxityToken);
-    }
+    // Who they are. A token is verified in the background - a join must not
+    // wait on a round trip to Bloxity - and until it answers, a returning
+    // player keeps the name they were last saved with.
+    this.resolveIdentity(client.sessionId, {
+      token: typeof options.bloxityToken === 'string' ? options.bloxityToken : '',
+      guestName: options.guestName,
+      guestAvatar: options.guestAvatar,
+    });
 
     logger.info(
       SCOPE,
@@ -271,19 +279,26 @@ export class GameRoom extends Room<GameState> {
   }
 
   /**
-   * Resolve a Bloxity token to an account, then hand over anything it bought.
+   * Resolve who this player is - the name and avatar everyone sees - and hand
+   * over anything their account bought.
    *
-   * An empty token is a logout. Every call supersedes the one before it, so a
-   * slow verification of an old token can never overwrite a newer answer.
+   * With a token, Bloxity is asked, and the account's display name and avatar
+   * thumbnail become the player's. Without one (or with one Bloxity refuses)
+   * the player is a Bloxity guest, shown by the guest name and thumbnail the SDK
+   * gave them, or as `GUEST_NAME`; a guest is never given a Bloxity id, so
+   * nothing they send reaches anyone's Bux. Internal ids are never shown.
+   * Every call supersedes the one before it, so a slow verification of an old
+   * token can never overwrite a newer answer.
    */
-  private resolveIdentity(sessionId: string, token: string): void {
+  private resolveIdentity(sessionId: string, message: Partial<BloxityIdentityMessage>): void {
     const check = (this.identityChecks.get(sessionId) ?? 0) + 1;
     this.identityChecks.set(sessionId, check);
+    const token = typeof message.token === 'string' ? message.token : '';
 
     if (!token) {
       this.bloxityIds.delete(sessionId);
       const player = this.state.players.get(sessionId);
-      if (player) player.displayName = '';
+      if (player) this.showAsGuest(sessionId, player, message);
       return;
     }
 
@@ -293,14 +308,23 @@ export class GameRoom extends Room<GameState> {
       if (!player) return;
       if (!user) {
         this.bloxityIds.delete(sessionId);
-        player.displayName = '';
+        this.showAsGuest(sessionId, player, message);
         return;
       }
       this.bloxityIds.set(sessionId, user.id);
-      player.displayName = user.displayName || user.username;
-      logger.info(SCOPE, `${sessionId} verified as Bloxity @${user.username}`);
+      player.displayName = sanitizeDisplayName(user.displayName) || sanitizeDisplayName(user.username) || GUEST_NAME;
+      player.avatarUrl = user.avatarUrl;
+      logger.info(SCOPE, `${sessionId} verified with Bloxity as "${player.displayName}"`);
+      this.persist(sessionId, player);
       this.applyGrants(sessionId, player);
     });
+  }
+
+  /** A guest: their Bloxity guest name and thumbnail, cleaned, or plain `GUEST_NAME`. */
+  private showAsGuest(sessionId: string, player: PlayerState, message: Partial<BloxityIdentityMessage>): void {
+    player.displayName = sanitizeDisplayName(message.guestName) || GUEST_NAME;
+    player.avatarUrl = normalizeAvatarUrl(message.guestAvatar);
+    this.persist(sessionId, player);
   }
 
   /**

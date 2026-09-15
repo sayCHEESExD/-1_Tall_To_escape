@@ -12,6 +12,7 @@ import {
 import { mkdir, open, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../util/logger.js';
+import { normalizeAvatarUrl, sanitizeDisplayName } from '@highjump/shared';
 import type { PersistenceAdapter, StoredProfile } from './PersistenceAdapter.js';
 
 const SCOPE = 'persistence';
@@ -65,6 +66,8 @@ export class JsonFilePersistence implements PersistenceAdapter {
       for (const [id, value] of Object.entries(raw)) {
         if (!value || typeof value !== 'object') continue;
         profiles.set(id, {
+          displayName: sanitizeDisplayName(value.displayName),
+          avatarUrl: normalizeAvatarUrl(value.avatarUrl),
           level: Math.max(1, numeric(value.level)),
           food: numeric(value.food),
           rebirths: numeric(value.rebirths),

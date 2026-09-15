@@ -1,9 +1,11 @@
+import { PLAYER_HEIGHT } from '@highjump/shared';
 import { Group, Object3D } from 'three';
 import type { AnimationInput } from '../animation/AnimationInput.js';
 import { PlayerAnimator, type AnimationState } from '../animation/PlayerAnimator.js';
 import { PlayerRig } from '../animation/rig/PlayerRig.js';
 import { HeldFood } from './HeldFood.js';
 import { LegStilts } from './LegStilts.js';
+import { NameTag } from './NameTag.js';
 import { PetCompanions } from './PetCompanions.js';
 import { playerModelLoader } from './PlayerModelLoader.js';
 import { TrailEffect } from './TrailEffect.js';
@@ -11,11 +13,15 @@ import { TrailEffect } from './TrailEffect.js';
 /** How fast the legs grow or shrink toward their target length, per second. */
 const LEG_RATE = 7;
 
+/** Where the name tag sits: above the head (and any Bloxity hat), riding the body up the legs. */
+const NAME_TAG_Y = PLAYER_HEIGHT + 1.4;
+
 /**
  * The visual half of a player, arranged so animation can never move them.
  *
  *   root          physics transform (position + facing). Gameplay owns it.
  *     lift        raises the body onto the tall legs while they are long
+ *       nameTag   the player's Bloxity name and avatar, over the head
  *       tipPivot  hip-height pivot
  *         visual   the bob and scale effects
  *           model  the cloned FBX (or a Bloxity body), posed by the rig;
@@ -28,6 +34,7 @@ export class PlayerCharacter {
   readonly animator: PlayerAnimator;
   readonly trail = new TrailEffect();
   readonly pets = new PetCompanions();
+  readonly nameTag = new NameTag();
 
   private readonly lift = new Group();
   private readonly tipPivot = new Group();
@@ -45,6 +52,8 @@ export class PlayerCharacter {
     this.defaultModel = playerModelLoader.createInstance();
     this.model = this.defaultModel;
     this.root.add(this.lift);
+    this.nameTag.sprite.position.y = NAME_TAG_Y;
+    this.lift.add(this.nameTag.sprite);
     this.lift.add(this.tipPivot);
     this.tipPivot.add(this.visual);
     this.visual.add(this.model);
@@ -130,6 +139,11 @@ export class PlayerCharacter {
     this.heldFood.setSlot(slot);
   }
 
+  /** The name and avatar thumbnail over the head: the server-replicated Bloxity identity. */
+  setIdentity(displayName: string, avatarUrl: string): void {
+    this.nameTag.set(displayName, avatarUrl);
+  }
+
   /** Show the pets equipped in an encoded inventory. */
   setPets(encoded: string): void {
     this.pets.setPets(encoded);
@@ -174,6 +188,7 @@ export class PlayerCharacter {
   }
 
   dispose(): void {
+    this.nameTag.dispose();
     this.stilts.dispose();
     this.heldFood.dispose();
     this.pets.dispose();

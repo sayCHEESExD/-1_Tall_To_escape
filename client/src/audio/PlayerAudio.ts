@@ -44,8 +44,11 @@ export class PlayerAudio {
       else this.audio.play('land', 0.3);
     }
 
+    // eat.mp3 loops while eating (a little louder at a table); the synthesised
+    // chomp below only covers the moment before the file has decoded.
+    this.audio.setEating(player.isEating, player.atActiveTable ? 1 : 0.7);
     this.sinceChomp += delta;
-    if (player.isEating && this.sinceChomp >= CHOMP_INTERVAL) {
+    if (!this.audio.hasEatSample && player.isEating && this.sinceChomp >= CHOMP_INTERVAL) {
       this.sinceChomp = 0;
       this.audio.play('eat', player.atActiveTable ? 0.8 : 0.5);
     }
