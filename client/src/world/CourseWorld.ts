@@ -66,8 +66,20 @@ const STAIR_OPACITY = 0.86;
 /** Thickness of the walkway's boundary walls. */
 const WALL_THICKNESS = 3;
 
+/**
+ * Depth of the hub's front wall at the stair mouth, matching the `hubWall`
+ * solids. Everything on the walkway side of it starts where it ends: boxes that
+ * TOUCH are free (the shared faces point opposite ways and cull), while boxes
+ * that OVERLAP with a face in the same plane z-fight - which is what shimmered
+ * across the walls at the entrance.
+ */
+const HUB_FRONT_DEPTH = 2;
+
 /** The strip of grass and trees either side of the walkway walls. */
 const OUTSIDE = { width: 60, treeSpacing: 34 } as const;
+
+/** How far the walls' grass caps hang over each side, so the grass beyond starts clear of them. */
+const GRASS_OVERHANG = 0.5;
 
 const LEAVES = [0x9ad63a, 0x86c42e, 0xb0e04a];
 
@@ -215,8 +227,8 @@ export class CourseWorld {
       [0, HUB.minZ - 1.5, width + 6, 3, h],
       [HUB.halfWidth + 1.5, (HUB.minZ + HUB.maxZ) / 2, 3, depth + 3, h],
       [-HUB.halfWidth - 1.5, (HUB.minZ + HUB.maxZ) / 2, 3, depth + 3, h],
-      [(firstHalf + HUB.halfWidth + 3) / 2, HUB.maxZ + 1, HUB.halfWidth + 3 - firstHalf, 2, h],
-      [-(firstHalf + HUB.halfWidth + 3) / 2, HUB.maxZ + 1, HUB.halfWidth + 3 - firstHalf, 2, h],
+      [(firstHalf + HUB.halfWidth + 3) / 2, HUB.maxZ + HUB_FRONT_DEPTH / 2, HUB.halfWidth + 3 - firstHalf, HUB_FRONT_DEPTH, h],
+      [-(firstHalf + HUB.halfWidth + 3) / 2, HUB.maxZ + HUB_FRONT_DEPTH / 2, HUB.halfWidth + 3 - firstHalf, HUB_FRONT_DEPTH, h],
     ];
     for (const [x, z, w, d, height] of walls) {
       this.mesh(texturedBox(w, height, d, STUD), wallMat, x, height / 2, z);
@@ -271,14 +283,24 @@ export class CourseWorld {
 
     const wall = this.lambert({ map: this.textures.studs(PALETTE.stairWall, PALETTE.stairWallLine) });
     const grass = this.lambert({ map: this.textures.studs(PALETTE.grass, PALETTE.grassLine) });
+    // Everything out here runs from the back of the hub's front wall to just
+    // past the last step, so nothing overlaps the hub's own walls at the mouth.
+    const runStartZ = STAIR_START_Z + HUB_FRONT_DEPTH;
+    const runEndZ = COURSE_END_Z + WALL_THICKNESS;
+    const runDepth = runEndZ - runStartZ;
+    const runZ = (runStartZ + runEndZ) / 2;
+    const outerX = half + WALL_THICKNESS;
     for (const side of [-1, 1]) {
       const x = side * (half + WALL_THICKNESS / 2);
-      this.mesh(texturedBox(WALL_THICKNESS, h, length + WALL_THICKNESS, STUD), wall, x, h / 2, midZ + WALL_THICKNESS / 2);
-      this.mesh(texturedBox(WALL_THICKNESS + 1, 1.2, length + WALL_THICKNESS, STUD), grass, x, h + 0.6, midZ + WALL_THICKNESS / 2);
-      // The grass beyond the wall, level with its top.
-      const outsideX = side * (half + WALL_THICKNESS + OUTSIDE.width / 2);
-      this.mesh(texturedBox(OUTSIDE.width, h, length + 8, STUD), wall, outsideX, h / 2, midZ).receiveShadow = true;
-      this.mesh(texturedBox(OUTSIDE.width, 1.2, length + 8, STUD), grass, outsideX, h + 0.6, midZ);
+      this.mesh(texturedBox(WALL_THICKNESS, h, runDepth, STUD), wall, x, h / 2, runZ);
+      this.mesh(texturedBox(WALL_THICKNESS + 1, 1.2, runDepth, STUD), grass, x, h + 0.6, runZ);
+      // The ground beyond the wall BUTTS UP against it - shared faces that point
+      // opposite ways cull, so they cost nothing - and its grass starts exactly
+      // where the wall's own grass ends. Lapping the two grass strips over each
+      // other put their tops in one plane and shimmered along the wall's edge.
+      this.mesh(texturedBox(OUTSIDE.width, h, runDepth, STUD), wall, side * (outerX + OUTSIDE.width / 2), h / 2, runZ).receiveShadow = true;
+      const grassWidth = OUTSIDE.width - GRASS_OVERHANG;
+      this.mesh(texturedBox(grassWidth, 1.2, runDepth, STUD), grass, side * (outerX + GRASS_OVERHANG + grassWidth / 2), h + 0.6, runZ);
     }
     const endZ = COURSE_END_Z + WALL_THICKNESS / 2;
     this.mesh(texturedBox(STAIRS.width + WALL_THICKNESS * 2, h, WALL_THICKNESS, STUD), wall, 0, h / 2, endZ);

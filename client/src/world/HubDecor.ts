@@ -66,7 +66,9 @@ const planter: Prop = (r) => {
   const parts: Part[] = [
     box(3.2, 0.9, 3.2, 0, 0, 0, 0xc9784a),
     box(3.4, 0.2, 3.4, 0, 0.9, 0, 0xe0a070),
-    box(2.8, 0.1, 2.8, 0, 1.0, 0, 0x5c3a1e),
+    // The soil sits PROUD of the rim. Level with it, the two tops shared one
+    // plane and the pot flickered brown-on-brown as the camera moved.
+    box(2.8, 0.22, 2.8, 0, 0.95, 0, 0x5c3a1e),
   ];
   for (let i = 0; i < 6; i += 1) {
     const ox = (r() - 0.5) * 2.2;

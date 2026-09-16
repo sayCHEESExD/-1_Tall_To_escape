@@ -69,7 +69,9 @@ export const buildFoodModel = (tier: FoodTier): Group => {
       break;
     case 'bread':
       part(g, box(1.1, 0.45, 0.62), { color: c, y: 0.23 });
-      part(g, cylinder(0.31, 0.31, 1.1), { color: a, y: 0.45, rz: Math.PI / 2, sy: 1, sz: 0.9 });
+      // Shorter than the crust box (1.1): end caps flush with its sides shared
+      // a plane with them and striped the face of the loaf.
+      part(g, cylinder(0.31, 0.31, 1.02), { color: a, y: 0.45, rz: Math.PI / 2, sy: 1, sz: 0.9 });
       break;
     case 'apple':
     case 'goldenApple': {
