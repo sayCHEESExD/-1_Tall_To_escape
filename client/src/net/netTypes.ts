@@ -10,6 +10,8 @@ export interface NetPlayerState {
   displayName: string;
   /** Bloxity avatar thumbnail, or '' for the default. */
   avatarUrl: string;
+  /** The Bloxity avatar they wear (`parseAvatarLook`); '' when they have no Bloxity data. */
+  avatar: string;
   x: number;
   y: number;
   z: number;
@@ -63,6 +65,8 @@ export interface IdentityPayload {
   token: string | null;
   gameSlug: string;
   guestAvatar: string;
+  /** This client's Bloxity avatar, encoded; '' without Bloxity. */
+  look: string;
 }
 
 export interface NetLeaderboardState {

@@ -1,5 +1,7 @@
-import { bestOwnedFood, diningRate, isPastTallLine } from '@highjump/shared';
+import { bestOwnedFood, diningRate, isPastTallLine, parseAvatarLook } from '@highjump/shared';
 import { createAnimationInput, type AnimationInput } from '../animation/AnimationInput.js';
+import { BloxityAvatar } from '../bloxity/BloxityAvatar.js';
+import { toLegionEquipped } from '../bloxity/legionTypes.js';
 import type { NetPlayerState } from '../net/netTypes.js';
 import { PlayerCharacter } from './PlayerCharacter.js';
 
@@ -24,7 +26,8 @@ const shortestAngle = (from: number, to: number): number => {
  * edges are DERIVED from monotonic counters against a baseline taken on first
  * sight, so a stranger's lifetime of jumps is never replayed on join. Their
  * legs, held food and pets are derived from replicated level, position, foods
- * and pets.
+ * and pets, and their BLOXITY AVATAR from the look the server replicated - the
+ * same look their own client is wearing, default avatar included.
  *
  * Remotes are ghosted: they never collide with anyone.
  */
@@ -40,6 +43,9 @@ export class RemotePlayer {
   private lastJumpCount: number;
   private wasGrounded = true;
   private placed = false;
+  /** Their Bloxity look, built on first sight of one and rebuilt when it changes. */
+  private avatar: BloxityAvatar | null = null;
+  private lastLook = '';
 
   constructor(state: NetPlayerState) {
     this.lastJumpCount = state.jumpCount;
@@ -70,6 +76,7 @@ export class RemotePlayer {
     this.wasGrounded = state.grounded;
 
     this.character.setIdentity(state.displayName, state.avatarUrl);
+    this.wearAvatar(state.avatar);
     this.character.setCosmetics(state.trailSlot);
     this.character.setFood(bestOwnedFood(state.ownedFoods).slot);
     this.character.setPets(state.pets);
@@ -104,7 +111,26 @@ export class RemotePlayer {
     this.input.landed = false;
   }
 
+  /**
+   * Dress them the way Bloxity dresses them. An empty look means they have no
+   * Bloxity data at all, which is the one case that keeps the bundled body.
+   */
+  private wearAvatar(encoded: string): void {
+    if (encoded === this.lastLook) return;
+    this.lastLook = encoded;
+    const look = parseAvatarLook(encoded);
+    if (!look) {
+      this.avatar?.dispose();
+      this.avatar = null;
+      this.character.setModel(null);
+      return;
+    }
+    this.avatar ??= new BloxityAvatar(this.character);
+    this.avatar.apply(toLegionEquipped(look), look.proportions);
+  }
+
   dispose(): void {
+    this.avatar?.dispose();
     this.character.dispose();
   }
 }

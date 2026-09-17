@@ -1,3 +1,11 @@
+import {
+  AVATAR_PROPORTION_RANGES,
+  DEFAULT_AVATAR_PROPORTIONS,
+  isAvatarId,
+  type AvatarLook,
+  type AvatarProportions,
+} from '@highjump/shared';
+
 /**
  * The Bloxity SDK's shape, as this game uses it.
  *
@@ -56,36 +64,12 @@ export interface LegionEquipped {
 }
 
 /** Avatar proportions. Every value is a multiplier defaulting to 1. */
-export interface LegionProportions {
-  readonly height: number;
-  readonly shoulderWidth: number;
-  readonly armLength: number;
-  readonly legOffsetX: number;
-  readonly torsoScaleX: number;
-  readonly neckHeight: number;
-  readonly headScale: number;
-}
+export type LegionProportions = AvatarProportions;
 
-export const DEFAULT_PROPORTIONS: LegionProportions = {
-  height: 1,
-  shoulderWidth: 1,
-  armLength: 1,
-  legOffsetX: 1,
-  torsoScaleX: 1,
-  neckHeight: 1,
-  headScale: 1,
-};
+export const DEFAULT_PROPORTIONS: LegionProportions = DEFAULT_AVATAR_PROPORTIONS;
 
 /** The documented clamp for each proportion, used by the in-game sliders. */
-export const PROPORTION_RANGES: Readonly<Record<keyof LegionProportions, readonly [number, number]>> = {
-  height: [0.5, 1.6],
-  shoulderWidth: [0.5, 1.5],
-  armLength: [0.05, 3],
-  legOffsetX: [-0.7, 5],
-  torsoScaleX: [0.3, 2],
-  neckHeight: [0.94, 1.2],
-  headScale: [0.3, 2.6],
-};
+export const PROPORTION_RANGES = AVATAR_PROPORTION_RANGES;
 
 export interface LegionPurchaseResult {
   readonly success: boolean;
@@ -212,3 +196,32 @@ declare global {
 /** An id is only equipped if it is a real one - exactly the reference page's test. */
 export const isEquippedId = (id: string | null | undefined): id is string =>
   id != null && id !== '' && id !== '-1' && id !== 'undefined';
+
+/** Bloxity's equipped ids as the replicated look spells them. */
+export const toAvatarSlots = (e: LegionEquipped): Record<string, string | null | undefined> => ({
+  skin: e.skinId,
+  hat: e.hatId,
+  back: e.backId,
+  head: e.headId,
+  torso: e.torsoId,
+  armL: e.armLId,
+  armR: e.armRId,
+  legL: e.legLId,
+  legR: e.legRId,
+});
+
+/** A replicated look as the SDK's own equipped ids, for `BloxityAvatar`. */
+export const toLegionEquipped = (look: AvatarLook): LegionEquipped => {
+  const id = (value: string | null): string | null => (isAvatarId(value) ? value : null);
+  return {
+    skinId: id(look.equipped.skin),
+    hatId: id(look.equipped.hat),
+    backId: id(look.equipped.back),
+    headId: id(look.equipped.head),
+    torsoId: id(look.equipped.torso),
+    armLId: id(look.equipped.armL),
+    armRId: id(look.equipped.armR),
+    legLId: id(look.equipped.legL),
+    legRId: id(look.equipped.legR),
+  };
+};

@@ -7,6 +7,7 @@
 export * from './constants/network.js';
 export * from './constants/world.js';
 export * from './config/camera.js';
+export * from './config/avatarLook.js';
 export * from './config/course.js';
 export * from './config/dining.js';
 export * from './config/foodRate.js';

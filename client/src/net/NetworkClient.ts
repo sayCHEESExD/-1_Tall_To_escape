@@ -85,6 +85,7 @@ export class NetworkClient {
       token: identity.token ?? '',
       gameSlug: identity.gameSlug,
       guestAvatar: identity.guestAvatar,
+      look: identity.look,
     };
     this.room?.send(MessageType.BloxityIdentity, message);
   }
@@ -123,6 +124,8 @@ export class NetworkClient {
           gameSlug: identity?.gameSlug || undefined,
           // Display only, for a guest; accepted by the server only as a Bloxity image.
           guestAvatar: identity?.guestAvatar || undefined,
+          // The Bloxity avatar to draw this player in, for everyone else.
+          look: identity?.look || undefined,
         });
         break;
       } catch (error) {

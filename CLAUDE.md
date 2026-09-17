@@ -183,9 +183,21 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
   replicated fields. Profiles keep the last name and thumbnail for offline board rows.
   Internal ids (browser player id, Bloxity account id, session id) are never shown.
   Thumbnails load once per URL with CORS (`avatarImages.ts`) and draw into canvases.
-- Avatar cosmetics dress the LOCAL character only (`BloxityAvatar`): a skin or body part
-  swaps in Bloxity's `player.glb` via `PlayerCharacter.setModel` (which rebuilds the
-  stilts and held food on the new bones); hats/back hang on bones.
+- **A player's avatar is BLOXITY'S, including the default one.** With any Bloxity
+  profile (signed in or guest) the character is Bloxity's `player.glb` through
+  `BloxityAvatar`/`PlayerCharacter.setModel`, wearing the equipped skin or Bloxity's
+  `DEFAULT_SKIN_ID` when none: nothing equipped means Bloxity's DEFAULT AVATAR, not the
+  bundled `player.fbx`. Parts swap into the GLB, hats/back hang on bones, proportions
+  scale bones. The bundled body and its `green.png` are the fallback for exactly one
+  case - no avatar data at all (no SDK, or the GLB will not load) - and nothing re-applies
+  them afterwards.
+- The look is REPLICATED, so remotes are dressed too: the client encodes its equipped ids
+  and proportions (`encodeAvatarLook`), sends them with the identity message, the server
+  cleans them (`sanitizeAvatarLook`: id pattern, Bloxity's proportion ranges) into
+  `PlayerState.avatar`, and `RemotePlayer` wears `parseAvatarLook`. '' means no Bloxity
+  data - the only bundled-body case.
+- The account chip has NO Log out button: signing out is the portal's business. Nothing in
+  this game calls `auth.logout()`.
 
 ## Verification
 

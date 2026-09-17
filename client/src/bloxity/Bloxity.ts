@@ -157,6 +157,9 @@ export class Bloxity {
     this.watchAvatar();
     this.watchSettings();
     this.watchPlayerEvents();
+    // The avatar as it stands right now. Without this, a player whose look never
+    // changes this session would wait on an event that has already happened.
+    this.pushAvatar();
   }
 
   // ------------------------------------------------------------------ auth
@@ -182,6 +185,11 @@ export class Bloxity {
     return (await guardAsync('auth.showAuthPopup', (api) => api.auth?.showAuthPopup?.())) ?? null;
   }
 
+  /**
+   * Part of the SDK surface, and deliberately UNUSED: the account chip has no
+   * Log out button, because signing out belongs to the portal, not to a game.
+   * The session itself is untouched - this is simply never called.
+   */
   logout(): void {
     guard('auth.logout', (api) => api.auth?.logout?.());
   }

@@ -6,6 +6,7 @@ import {
   STEPS,
   TRAIL_TIERS,
   bestOwnedFood,
+  encodeAvatarLook,
   formatNumber,
   petById,
   type PetHatchedMessage,
@@ -15,7 +16,7 @@ import { AudioManager } from '../audio/AudioManager.js';
 import { PlayerAudio } from '../audio/PlayerAudio.js';
 import { Bloxity, GAME_SLUG } from '../bloxity/Bloxity.js';
 import { BloxityAvatar } from '../bloxity/BloxityAvatar.js';
-import type { LegionEquipped, LegionProportions } from '../bloxity/legionTypes.js';
+import { toAvatarSlots, type LegionEquipped, type LegionProportions } from '../bloxity/legionTypes.js';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera.js';
 import { clientConfig } from '../config/clientConfig.js';
 import { InputManager } from '../input/InputManager.js';
@@ -468,9 +469,14 @@ export class Game {
    * Bloxity's random guest name - with the guest avatar Bloxity built for them.
    */
   private identityPayload(): IdentityPayload {
+    // The avatar goes with it: everyone else draws this player from it, and ''
+    // (no SDK at all) is the only thing that leaves them in the bundled body.
+    const look = this.bloxity.available
+      ? encodeAvatarLook(toAvatarSlots(this.bloxity.getEquipped()), this.bloxity.getProportions())
+      : '';
     const token = this.bloxity.getToken();
-    if (token) return { token, gameSlug: GAME_SLUG, guestAvatar: '' };
-    return { token: null, gameSlug: GAME_SLUG, guestAvatar: this.bloxity.getGuest()?.pfp || '' };
+    if (token) return { token, gameSlug: GAME_SLUG, guestAvatar: '', look };
+    return { token: null, gameSlug: GAME_SLUG, guestAvatar: this.bloxity.getGuest()?.pfp || '', look };
   }
 
   /** Send the identity to the room when it actually changed. */

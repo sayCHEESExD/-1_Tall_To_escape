@@ -14,10 +14,14 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DEFAULT_AVATAR_LOOK,
   DEFAULT_AVATAR_URL,
   GUEST_NAME,
   LEADERBOARD_SIZE,
+  encodeAvatarLook,
   normalizeAvatarUrl,
+  parseAvatarLook,
+  sanitizeAvatarLook,
   sanitizeDisplayName,
 } from '../shared/dist/index.js';
 import { BuxGrants, SKU_WINS } from '../server/dist/bloxity/BuxGrants.js';
@@ -213,6 +217,36 @@ console.log("\ntoken verification: a signed-in player is their Bloxity account, 
     globalThis.fetch = realFetch;
   }
 }
+
+console.log('\navatars: the look Bloxity gives a player is what everyone draws\n');
+{
+  const nothing = encodeAvatarLook({}, {});
+  check('a player with nothing equipped still sends a look - their Bloxity DEFAULT avatar', nothing === DEFAULT_AVATAR_LOOK && nothing !== '');
+  check('and it parses to no equipped ids, so the Bloxity default body and skin are worn', (() => {
+    const look = parseAvatarLook(nothing);
+    return look !== null && Object.values(look.equipped).every((id) => id === null) && look.proportions.height === 1;
+  })());
+  check('only an EMPTY look means no Bloxity data (the one bundled-body fallback)', parseAvatarLook('') === null && sanitizeAvatarLook('') === '');
+
+  const custom = encodeAvatarLook(
+    { skin: '12', hat: 'h7', back: '-1', head: 'hd3', torso: undefined, armL: null, armR: 'a9', legL: '', legR: 'l4' },
+    { height: 1.2, headScale: 2, armLength: 0.5, shoulderWidth: 1.1, legOffsetX: 1, torsoScaleX: 1, neckHeight: 1 },
+  );
+  const worn = parseAvatarLook(custom);
+  check('a custom avatar keeps every equipped id', worn.equipped.skin === '12' && worn.equipped.hat === 'h7' && worn.equipped.head === 'hd3' && worn.equipped.armR === 'a9' && worn.equipped.legR === 'l4');
+  check('and every spelling of "none" Bloxity uses means none', worn.equipped.back === null && worn.equipped.torso === null && worn.equipped.armL === null && worn.equipped.legL === null);
+  check('and the proportions survive the round trip', worn.proportions.height === 1.2 && worn.proportions.headScale === 2 && worn.proportions.armLength === 0.5);
+
+  check("proportions are clamped to Bloxity's own range", (() => {
+    const look = parseAvatarLook(encodeAvatarLook({}, { height: 99, headScale: -5 }));
+    return look.proportions.height === 1.6 && look.proportions.headScale === 0.3;
+  })());
+  check('a junk id is refused rather than fetched', parseAvatarLook(encodeAvatarLook({ hat: '../../etc/passwd' }, {})).equipped.hat === null);
+  check('a malformed look is refused outright', sanitizeAvatarLook('nonsense') === '' && sanitizeAvatarLook('a,b|1') === '' && sanitizeAvatarLook(42) === '');
+  check('an oversized look is refused', sanitizeAvatarLook('x'.repeat(500)) === '');
+  check('what the server replicates is canonical, whatever the client spelled', sanitizeAvatarLook(sanitizeAvatarLook(custom)) === sanitizeAvatarLook(custom));
+}
+
 
 console.log(`\n${failures === 0 ? 'bloxity verified' : `${failures} FAILURE(S)`}\n`);
 process.exit(failures === 0 ? 0 : 1);

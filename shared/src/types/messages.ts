@@ -64,4 +64,10 @@ export interface BloxityIdentityMessage {
   token: string;
   gameSlug?: string;
   guestAvatar?: string;
+  /**
+   * The sender's Bloxity avatar (`encodeAvatarLook`), replicated so every other
+   * player sees the look they picked. '' means no Bloxity data at all - the only
+   * case that falls back to the bundled character.
+   */
+  look?: string;
 }

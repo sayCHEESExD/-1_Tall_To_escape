@@ -31,16 +31,20 @@ const SCRATCH = new Vector3();
 /**
  * Bloxity cosmetics on the LOCAL player's character.
  *
- *  - the BODY: `player.glb` with its parts swapped in, but only when the
- *    account wears a skin or a body part - a Bloxity skin is UV-mapped for
- *    that body and would be garbage on `player.fbx`, so an account with neither
- *    keeps the bundled character exactly as it was;
+ *  - the BODY: `player.glb` with its parts swapped in. A player with a Bloxity
+ *    profile wears the BLOXITY body whatever they have equipped: with nothing
+ *    equipped that is Bloxity's own default avatar (its default skin on the
+ *    default body), which is what they picked, so the bundled `player.fbx` must
+ *    not stand in for it. The bundled body is the fallback for exactly one case:
+ *    no Bloxity avatar data at all (no SDK, or `player.glb` cannot be fetched),
+ *    and `apply` is simply never called then;
  *  - the SKIN, as the body material's map;
  *  - the HAT and BACK item, parented to real bones so they follow the jump;
  *  - the PROPORTIONS, as scales and offsets on bones. Never rotations:
  *    `PlayerRig` rebuilds every bone quaternion each frame.
  *
- * Remote players are not dressed: their equipped ids are not replicated.
+ * Local and remote alike: the local player applies what the SDK reports, and a
+ * remote player applies the look the server replicated for them.
  */
 export class BloxityAvatar {
   private readonly objLoader = new OBJLoader();
@@ -76,11 +80,12 @@ export class BloxityAvatar {
     this.equipped = equipped;
     this.proportions = proportions;
 
-    const wantsBody = isEquippedId(equipped.skinId) || hasParts(equipped);
-    const key = wantsBody ? bodyKeyOf(equipped) : '';
+    // Keyed on body PARTS only, so a hat or skin change never refetches a body.
+    // The empty key is the untouched bundled body, which this can only leave.
+    const key = bodyKeyOf(equipped);
     if (key !== this.bodyKey) {
       this.bodyKey = key;
-      void this.rebuildBody(wantsBody);
+      void this.rebuildBody();
     }
     this.wearLayers();
   }
@@ -94,15 +99,17 @@ export class BloxityAvatar {
     if (!this.wearingBloxityBodyMaterial) this.material?.dispose();
   }
 
-  private async rebuildBody(wantsBody: boolean): Promise<void> {
+  private async rebuildBody(): Promise<void> {
     const token = (this.bodyToken += 1);
-    const body = wantsBody ? await bloxityBodyFactory.build(this.equipped) : null;
+    // null only when Bloxity's body cannot be fetched at all - then, and only
+    // then, the bundled character stands in.
+    const body = await bloxityBodyFactory.build(this.equipped);
     if (this.disposed || token !== this.bodyToken) return;
 
     const model = this.character.setModel(body);
     this.bind(model, body !== null);
     this.wearLayers();
-    logger.info(SCOPE, body ? 'wearing the Bloxity body' : 'wearing the bundled body');
+    logger.info(SCOPE, body ? 'wearing the Bloxity body' : 'Bloxity body unavailable - wearing the bundled body');
   }
 
   /** Re-collect everything tied to a particular model, and forget what was worn on the old one. */
@@ -284,8 +291,6 @@ export class BloxityAvatar {
     write(bone.userData['restPosition'] as Vector3, bone);
   }
 }
-
-const hasParts = (e: LegionEquipped): boolean => [e.headId, e.torsoId, e.armLId, e.armRId, e.legLId, e.legRId].some(isEquippedId);
 
 /** Body parts only: a hat or skin change must not refetch an identical body. */
 const bodyKeyOf = (e: LegionEquipped): string =>

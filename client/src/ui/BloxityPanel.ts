@@ -158,6 +158,8 @@ export class BloxityPanel {
       row.appendChild(bux);
     }
 
+    // No Log out: signing out is the portal's business, not this game's. The
+    // SDK's session is untouched - nothing here calls auth.logout().
     const actions = document.createElement('div');
     actions.className = 'hj-account__actions';
     const friendsLabel = this.friendCount === null ? 'Friends' : `Friends (${this.friendCount})`;
@@ -165,7 +167,6 @@ export class BloxityPanel {
       this.button(friendsLabel, 'hj-account__btn', () => void this.openFriends()),
       this.button('Avatar', 'hj-account__btn', () => this.openAvatar()),
       this.button('Bux', 'hj-account__btn', () => void this.openBux()),
-      this.button('Log out', 'hj-account__btn', () => this.bloxity.logout()),
     );
 
     this.chip.append(row, actions);

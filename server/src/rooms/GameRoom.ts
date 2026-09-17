@@ -6,6 +6,7 @@ import {
   SPAWN_ROTATION_Y,
   GUEST_NAME,
   normalizeAvatarUrl,
+  sanitizeAvatarLook,
   sanitizeDisplayName,
   type BloxityIdentityMessage,
   type ClaimWinMessage,
@@ -50,6 +51,8 @@ interface JoinOptions {
   gameSlug?: string;
   /** Without a token: the Bloxity guest avatar thumbnail, display only. */
   guestAvatar?: string;
+  /** The Bloxity avatar being worn, display only. */
+  look?: string;
 }
 
 /**
@@ -179,6 +182,7 @@ export class GameRoom extends Room<GameState> {
       token: typeof options.bloxityToken === 'string' ? options.bloxityToken : '',
       gameSlug: options.gameSlug,
       guestAvatar: options.guestAvatar,
+      look: options.look,
     });
 
     logger.info(
@@ -297,9 +301,13 @@ export class GameRoom extends Room<GameState> {
     this.identityChecks.set(sessionId, check);
     const token = typeof message.token === 'string' ? message.token : '';
 
+    // The avatar is DISPLAY data, the same for a guest and a signed-in account,
+    // so it lands immediately rather than waiting on Bloxity to answer.
+    const player = this.state.players.get(sessionId);
+    if (player) player.avatar = sanitizeAvatarLook(message.look);
+
     if (!token) {
       this.bloxityIds.delete(sessionId);
-      const player = this.state.players.get(sessionId);
       if (player) this.showAsGuest(sessionId, player, message);
       return;
     }

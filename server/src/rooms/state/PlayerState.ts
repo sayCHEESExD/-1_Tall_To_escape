@@ -18,6 +18,11 @@ export class PlayerState extends Schema {
   @type('string') displayName = '';
   /** Their Bloxity avatar thumbnail (static.bloxity.io only), or '' for the default. */
   @type('string') avatarUrl = '';
+  /**
+   * The Bloxity avatar they are wearing (`encodeAvatarLook`), so everyone draws
+   * them the way Bloxity does. '' only when they have no Bloxity data.
+   */
+  @type('string') avatar = '';
 
   @type('float32') x: number = SPAWN_POSITION.x;
   @type('float32') y: number = SPAWN_POSITION.y;
