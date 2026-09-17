@@ -197,6 +197,23 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
   scale bones. The bundled body and its `green.png` are the fallback for exactly one
   case - no avatar data at all (no SDK, or the GLB will not load) - and nothing re-applies
   them afterwards.
+- **An avatar is applied the way Bloxity's own renderer applies it** (the reference page
+  at bloxity.io/test-game.html), and EVERY player's is their own. Height stretches the
+  model, arm length scales the arm bones, head scale scales `Neck1` (undoing the height
+  stretch on it), and `Neck_Offset` carries `(height - headScale) * rest` plus the
+  neck-height slider. Torso width, shoulder width and leg spread are NOT bone scale -
+  children inherit that, which smeared heads, arms and hats - they are applied to the
+  SKINNING MATRICES in `patchSkeleton`: the torso's own matrices are scaled and the bones
+  above it are shifted by `(bindX - spine1X) * (value - 1) * COUNTER_SCALE`. Each body's
+  skeletons are patched with a closure over THAT avatar's proportions; there is no shared
+  state. Hats and back items hang in BONE space at scale 1 (`HAT_LIFT` 0.8) on a Bloxity
+  body, as the reference hangs them; only the bundled body needs world-scale compensation.
+- **Nothing is shared between two players' bodies.** Each body is its own clone with its
+  own material, and each body part is retargeted onto THAT body's skeleton
+  (`retarget`, marked `bloxityPart` so `setModel` frees it). The factory caches only
+  DOWNLOADS - a part's geometry as authored plus its rig's bone names - never a geometry
+  already bound to some player's skeleton. A late-arriving body is dropped unless its
+  `bodyToken` is still current, so a slow load cannot land on a newer look.
 - The look is REPLICATED, so remotes are dressed too: the client encodes its equipped ids
   and proportions (`encodeAvatarLook`), sends them with the identity message, the server
   cleans them (`sanitizeAvatarLook`: id pattern, Bloxity's proportion ranges) into

@@ -1,13 +1,16 @@
 import { PLAYER_HEIGHT } from '@highjump/shared';
 import {
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   NearestFilter,
   SRGBColorSpace,
+  SkinnedMesh,
   TextureLoader,
   Vector3,
   type Bone,
   type Object3D,
+  type Skeleton,
   type Texture,
 } from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -23,6 +26,26 @@ const SCOPE = 'bloxity/avatar';
 const ITEM_WORLD_SCALE = PLAYER_HEIGHT / BLOXITY_MODEL_HEIGHT;
 /** The reference page's hat lift on the head bone, in GLB units. */
 const HAT_LIFT = 0.8;
+
+/**
+ * The reference page's "counter-scale" for the offsets that widen a body:
+ * shoulders, torso and leg spread move bones sideways by this fraction of how
+ * far they already sit from the centre.
+ */
+const COUNTER_SCALE = 0.8;
+
+/** Bones ABOVE the torso: widening the torso moves them, and must not stretch them. */
+const ABOVE_TORSO: ReadonlySet<string> = new Set([
+  'Spine2',
+  'ArmL_Offset',
+  'ArmL1',
+  'ArmL2',
+  'ArmR_Offset',
+  'ArmR1',
+  'ArmR2',
+  'Neck_Offset',
+  'Neck1',
+]);
 /** How far behind the chest a back item sits on the bundled body, in world units. */
 const FBX_BACK_OFFSET = -0.18;
 
@@ -61,6 +84,9 @@ export class BloxityAvatar {
   private wearingBloxityBody = false;
   /** Whether `material` belongs to a Bloxity body (not ours to dispose) or is our clone. */
   private wearingBloxityBodyMaterial = false;
+
+  /** Bind-pose Y of this body's Neck_Offset bone, for the neck-height offset. */
+  private neckOffsetBindY = 0;
 
   private readonly attachments = new Map<'hat' | 'back', Object3D>();
   private currentSkin: string | null = null;
@@ -136,6 +162,75 @@ export class BloxityAvatar {
     this.material = material;
     this.wearingBloxityBodyMaterial = bloxityBody;
     this.defaultMap = (material as MeshStandardMaterial | null)?.map ?? null;
+
+    this.neckOffsetBindY = 0;
+    if (bloxityBody) this.patchSkeletons(model);
+  }
+
+  /**
+   * Widening a body - torso, shoulders, leg spread - is done to the SKINNING
+   * MATRICES, exactly as Bloxity's own renderer does it: the torso's own
+   * matrices are scaled, and every bone above it is SHIFTED rather than scaled,
+   * so a broad chest does not stretch the head, the arms or a hat. Scaling the
+   * bones themselves (which their children inherit) is what smeared these
+   * avatars.
+   *
+   * Each body is patched with a closure over THIS avatar's proportions, so one
+   * player's shape can never reach another's - there is no shared state here.
+   */
+  private patchSkeletons(model: Object3D): void {
+    const patched: Skeleton[] = [];
+    model.traverse((child) => {
+      if (!(child instanceof SkinnedMesh) || patched.includes(child.skeleton)) return;
+      patched.push(child.skeleton);
+      this.patchSkeleton(child.skeleton);
+    });
+  }
+
+  private patchSkeleton(skeleton: Skeleton): void {
+    const inverse = new Matrix4();
+    const bindX = new Map<string, number>();
+    skeleton.bones.forEach((bone, index) => {
+      const boneInverse = skeleton.boneInverses[index];
+      if (!boneInverse) return;
+      const position = new Vector3().setFromMatrixPosition(inverse.copy(boneInverse).invert());
+      bindX.set(bone.name, position.x);
+      if (bone.name === 'Neck_Offset') this.neckOffsetBindY = position.y;
+    });
+    const spineX = bindX.get('Spine1') ?? 0;
+
+    const update = skeleton.update.bind(skeleton);
+    const read = (): LegionProportions => this.proportions;
+    skeleton.update = function patchedUpdate(this: Skeleton): void {
+      update();
+      const p = read();
+      const shoulders = finite(p.shoulderWidth);
+      const legs = finite(p.legOffsetX);
+      const torso = finite(p.torsoScaleX);
+      if (shoulders === 1 && legs === 1 && torso === 1) return;
+
+      const matrices = this.boneMatrices;
+      if (!matrices) return;
+      for (let i = 0; i < this.bones.length; i += 1) {
+        const name = this.bones[i]?.name ?? '';
+        const at = i * 16;
+        if (torso !== 1 && (name === 'Spine1' || name === 'Spine2')) {
+          for (let k = 0; k < 4; k += 1) matrices[at + k] = (matrices[at + k] ?? 0) * torso;
+        }
+        if (torso !== 1 && ABOVE_TORSO.has(name)) {
+          const x = bindX.get(name);
+          if (x !== undefined) matrices[at + 12] = (matrices[at + 12] ?? 0) + (x - spineX) * (torso - 1) * COUNTER_SCALE;
+        }
+        if (shoulders !== 1 && name.startsWith('Arm')) {
+          const x = bindX.get(name.startsWith('ArmL') ? 'ArmL_Offset' : 'ArmR_Offset') ?? 0;
+          if (x) matrices[at + 12] = (matrices[at + 12] ?? 0) + x * (shoulders - 1) * COUNTER_SCALE;
+        }
+        if (legs !== 1 && name.startsWith('Leg')) {
+          const x = bindX.get(name.startsWith('LegL') ? 'LegL_Offset' : 'LegR_Offset') ?? 0;
+          if (x) matrices[at + 12] = (matrices[at + 12] ?? 0) + x * (legs - 1) * COUNTER_SCALE;
+        }
+      }
+    };
   }
 
   private wearLayers(): void {
@@ -223,16 +318,22 @@ export class BloxityAvatar {
         }
       });
 
-      // Sized in WORLD terms, not bone terms: the two bodies do not share a
-      // bone space, so dividing by the anchor's world scale gives both the size
-      // the item has on Bloxity's own renderer, in this game's units.
-      anchor.updateWorldMatrix(true, false);
-      const boneScale = anchor.getWorldScale(SCRATCH).y || 1;
-      object.scale.setScalar(ITEM_WORLD_SCALE / boneScale);
-      if (slot === 'hat') {
-        object.position.set(0, (HAT_LIFT * ITEM_WORLD_SCALE) / boneScale, 0);
+      if (this.wearingBloxityBody) {
+        // Bloxity's body: an item is authored in THIS rig's bone space, so it
+        // hangs at scale 1 exactly as Bloxity's renderer hangs it and the head's
+        // own scale carries it. Compensating for the bone's world scale (which
+        // the bundled body below does need) is what left hats half-sized and
+        // sunk into a big head.
+        object.scale.setScalar(1);
+        object.position.set(0, slot === 'hat' ? HAT_LIFT : 0, 0);
+        if (slot === 'back') object.scale.x = Math.max(0.05, finite(this.proportions.height));
       } else {
-        object.position.set(0, 0, this.wearingBloxityBody ? 0 : FBX_BACK_OFFSET / boneScale);
+        // The bundled body is a different rig: size the item in WORLD terms.
+        anchor.updateWorldMatrix(true, false);
+        const boneScale = anchor.getWorldScale(SCRATCH).y || 1;
+        object.scale.setScalar(ITEM_WORLD_SCALE / boneScale);
+        object.position.set(0, slot === 'hat' ? (HAT_LIFT * ITEM_WORLD_SCALE) / boneScale : 0, 0);
+        if (slot === 'back') object.position.z = FBX_BACK_OFFSET / boneScale;
       }
 
       anchor.add(object);
@@ -245,36 +346,34 @@ export class BloxityAvatar {
   // ----------------------------------------------------------- proportions
 
   /**
-   * Proportions, after the reference page's viewer: height stretches the body
-   * vertically, arm length scales the arm bones, head scale scales the neck bone
-   * while undoing the height stretch on it, neck height lifts the head. All
-   * relative to each bone's REST values, so the two bodies' units never matter.
+   * Proportions, as Bloxity's own renderer applies them: height stretches the
+   * body vertically, arm length scales the arm bones, head scale scales the neck
+   * bone while undoing that stretch on it, and the neck offset carries both the
+   * height/head difference and the neck-height slider.
+   *
+   * What is NOT here: torso width, shoulder width and leg spread. Those widen a
+   * body WITHOUT stretching what sits above it, which bone scale cannot do
+   * (children inherit it), so they are done to the skinning matrices in
+   * `patchSkeleton`. Everything is relative to each bone's REST values, so the
+   * two bodies' units never matter, and all of it is this avatar's alone.
    */
   private applyProportions(p: LegionProportions): void {
-    const num = (value: number, fallback = 1): number => (Number.isFinite(value) ? value : fallback);
-    const height = Math.max(0.05, num(p.height));
+    const height = Math.max(0.05, finite(p.height));
+    const head = finite(p.headScale);
 
     const model = this.character.modelRoot;
     const base = (model.userData['baseScale'] as number | undefined) ?? model.scale.x;
     model.userData['baseScale'] = base;
     model.scale.set(base, base * height, base);
 
-    this.scaleBone('Spine1', (rest, bone) => bone.scale.set(rest.x * num(p.torsoScaleX), rest.y, rest.z));
-    this.scaleBone('Spine2', (rest, bone) => bone.scale.set(rest.x * num(p.shoulderWidth), rest.y, rest.z));
     for (const name of ['ArmL1', 'ArmR1']) {
-      this.scaleBone(name, (rest, bone) => bone.scale.set(rest.x, rest.y * num(p.armLength), rest.z));
+      this.scaleBone(name, (rest, bone) => bone.scale.set(rest.x, rest.y * finite(p.armLength), rest.z));
     }
-    const head = num(p.headScale);
     this.scaleBone('Neck1', (rest, bone) => bone.scale.set(rest.x * head, (rest.y * head) / height, rest.z * head));
-    this.moveBone('Neck1', (rest, bone) => {
-      bone.position.y = rest.y * (1 + (num(p.neckHeight) - 1) * 0.8);
+    // The head rides the body's stretch rather than being pushed through it.
+    this.moveBone('Neck_Offset', (rest, bone) => {
+      bone.position.y = rest.y + (height - head) * rest.y + this.neckOffsetBindY * (finite(p.neckHeight) - 1) * COUNTER_SCALE;
     });
-    // Leg spread, proportional to how far each hip already sits off the centre.
-    for (const name of ['LegL1', 'LegR1']) {
-      this.moveBone(name, (rest, bone) => {
-        bone.position.x = rest.x * (1 + (num(p.legOffsetX) - 1) * 0.5);
-      });
-    }
   }
 
   private scaleBone(name: string, write: (rest: Vector3, bone: Bone) => void): void {
@@ -291,6 +390,9 @@ export class BloxityAvatar {
     write(bone.userData['restPosition'] as Vector3, bone);
   }
 }
+
+/** A proportion the sliders can actually produce; anything else means "unchanged". */
+const finite = (value: number | undefined): number => (typeof value === 'number' && Number.isFinite(value) ? value : 1);
 
 /** Body parts only: a hat or skin change must not refetch an identical body. */
 const bodyKeyOf = (e: LegionEquipped): string =>

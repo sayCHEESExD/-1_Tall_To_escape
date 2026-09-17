@@ -8,6 +8,12 @@ import { isEquippedId, type LegionEquipped } from './legionTypes.js';
 
 const SCOPE = 'bloxity/body';
 
+/** A part as it was downloaded: its geometry and the rig it was authored against. */
+interface SourcePart {
+  readonly geometry: BufferGeometry;
+  readonly boneNames: readonly string[];
+}
+
 /**
  * Builds a character body out of a player's Bloxity avatar.
  *
@@ -22,7 +28,8 @@ const SCOPE = 'bloxity/body';
  */
 export class BloxityBodyFactory {
   private prototype: Promise<Object3D | null> | null = null;
-  private readonly parts = new Map<string, Promise<BufferGeometry | null>>();
+  /** Downloads, cached by URL. The geometry here is never worn - each body gets its own copy. */
+  private readonly parts = new Map<string, Promise<SourcePart | null>>();
 
   private loadPrototype(): Promise<Object3D | null> {
     this.prototype ??= new GLTFLoader()
@@ -93,18 +100,20 @@ export class BloxityBodyFactory {
           logger.warn(SCOPE, `base body has no mesh named ${mesh}`);
           return;
         }
-        const geometry = await this.loadPart(url, target);
-        if (geometry) target.geometry = geometry;
+        const source = await this.loadPart(url);
+        // Retargeted PER BODY, so no two players ever share a geometry that was
+        // mapped onto one of their skeletons.
+        if (source) target.geometry = retarget(source, target);
       }),
     );
   }
 
   /**
-   * Load one part and retarget its skinning onto the base skeleton. A part GLB
-   * ships its own copy of the rig, whose joint order differs from the body's,
-   * so `skinIndex` values are translated through the bone NAME.
+   * Download one part, once per URL. What is cached is the DOWNLOAD - the
+   * geometry as authored and the names of the rig it was authored against - not
+   * a geometry bound to some particular player's skeleton.
    */
-  private loadPart(url: string, target: SkinnedMesh): Promise<BufferGeometry | null> {
+  private loadPart(url: string): Promise<SourcePart | null> {
     const cached = this.parts.get(url);
     if (cached) return cached;
 
@@ -115,7 +124,8 @@ export class BloxityBodyFactory {
         gltf.scene.traverse((child) => {
           if (!source && child instanceof SkinnedMesh) source = child;
         });
-        return source ? retarget(source, target) : null;
+        const mesh = source as SkinnedMesh | null;
+        return mesh ? { geometry: mesh.geometry, boneNames: mesh.skeleton.bones.map((bone) => bone.name) } : null;
       })
       .catch((error: unknown) => {
         logger.warn(SCOPE, `part ${url} failed to load: ${String(error)}`);
@@ -127,8 +137,15 @@ export class BloxityBodyFactory {
   }
 }
 
-const retarget = (source: SkinnedMesh, target: SkinnedMesh): BufferGeometry => {
+/**
+ * One player's copy of a part, its skinning translated onto THAT player's
+ * skeleton. A part GLB ships its own copy of the rig, whose joint order differs
+ * from the body's, so `skinIndex` values are translated through the bone NAME.
+ * The copy is marked so the body that wears it can free it later.
+ */
+const retarget = (source: SourcePart, target: SkinnedMesh): BufferGeometry => {
   const geometry = source.geometry.clone();
+  geometry.userData['bloxityPart'] = true;
   const attribute = geometry.getAttribute('skinIndex') as BufferAttribute | undefined;
   if (!attribute) return geometry;
 
@@ -137,8 +154,8 @@ const retarget = (source: SkinnedMesh, target: SkinnedMesh): BufferGeometry => {
     if (!byName.has(bone.name)) byName.set(bone.name, index);
   });
   const translation = new Map<number, number>();
-  source.skeleton.bones.forEach((bone, index) => {
-    const mapped = byName.get(bone.name);
+  source.boneNames.forEach((name, index) => {
+    const mapped = byName.get(name);
     if (mapped !== undefined) translation.set(index, mapped);
   });
 

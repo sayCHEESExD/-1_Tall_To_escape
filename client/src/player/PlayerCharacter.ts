@@ -94,10 +94,13 @@ export class PlayerCharacter {
     const previous = this.model;
     previous.removeFromParent();
     if (previous !== this.defaultModel && previous.userData['bloxityBody'] === true) {
-      // A Bloxity body owns its material; its part geometry is cached and shared.
+      // A Bloxity body owns its material, and owns the copy of each body part
+      // that was retargeted onto ITS skeleton. The prototype's own geometry is
+      // shared with every other body and is not ours to free.
       previous.traverse((child) => {
-        const material = (child as { material?: { dispose?: () => void } }).material;
-        material?.dispose?.();
+        const mesh = child as { material?: { dispose?: () => void }; geometry?: { userData?: Record<string, unknown>; dispose?: () => void } };
+        mesh.material?.dispose?.();
+        if (mesh.geometry?.userData?.['bloxityPart'] === true) mesh.geometry.dispose?.();
       });
     }
 
