@@ -208,6 +208,10 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
   skeletons are patched with a closure over THAT avatar's proportions; there is no shared
   state. Hats and back items hang in BONE space at scale 1 (`HAT_LIFT` 0.8) on a Bloxity
   body, as the reference hangs them; only the bundled body needs world-scale compensation.
+  **Texture `flipY` differs by asset kind and must not be unified:** a SKIN comes from the
+  GLB and is authored for glTF's UV convention (`flipY` false), while a HAT or BACK item is
+  an OBJ authored for three.js' own default (`flipY` true). Flipping an item's atlas turns a
+  helmet into a mottled blob - which is precisely what it looked like.
 - **Nothing is shared between two players' bodies.** Each body is its own clone with its
   own material, and each body part is retargeted onto THAT body's skeleton
   (`retarget`, marked `bloxityPart` so `setModel` frees it). The factory caches only

@@ -267,7 +267,8 @@ export class BloxityAvatar {
           texture.dispose();
           return;
         }
-        pixelArt(texture);
+        // The body's skin: glTF UVs, so no flip.
+        pixelArt(texture, false);
         this.textures.push(texture);
         material.map = texture;
         material.needsUpdate = true;
@@ -308,7 +309,8 @@ export class BloxityAvatar {
         texture.dispose();
         return;
       }
-      pixelArt(texture);
+      // An OBJ item: three.js' own UV convention, so the flip stays on.
+      pixelArt(texture, true);
       this.textures.push(texture);
       const material = new MeshStandardMaterial({ map: texture, roughness: 0.85 });
       object.traverse((child) => {
@@ -398,10 +400,19 @@ const finite = (value: number | undefined): number => (typeof value === 'number'
 const bodyKeyOf = (e: LegionEquipped): string =>
   [e.headId, e.torsoId, e.armLId, e.armRId, e.legLId, e.legRId].map((id) => (isEquippedId(id) ? id : '-')).join('|');
 
-/** Bloxity textures are pixel art; smoothing turns faces into smudges. */
-const pixelArt = (texture: Texture): void => {
+/**
+ * Bloxity textures are pixel art; smoothing turns faces into smudges.
+ *
+ * `flipY` is the part that matters and it is NOT the same for both kinds, which
+ * is exactly how the reference page treats them. A SKIN belongs to the GLB body
+ * and is authored for glTF's UV convention, so it must be flipped off. A HAT or
+ * BACK item is an OBJ, authored for three.js' own default, so flipping it turns
+ * the atlas upside down and smears the wrong pixels over the mesh - a helmet
+ * comes out a mottled blob instead of a helmet.
+ */
+const pixelArt = (texture: Texture, flipY: boolean): void => {
   texture.colorSpace = SRGBColorSpace;
-  texture.flipY = false;
+  texture.flipY = flipY;
   texture.magFilter = NearestFilter;
   texture.minFilter = NearestFilter;
   texture.generateMipmaps = false;
