@@ -56,14 +56,21 @@ export interface PetHatchedMessage {
  *
  * `gameSlug` is the slug the client's SDK was initialised with: a token issued
  * inside a game is a game capability, which Bloxity verifies against that slug.
- * Without a token the player is shown as a guest, and `guestAvatar` is the
- * thumbnail Bloxity's SDK built for them (`auth.getGuest()`) - DISPLAY ONLY,
- * accepted only as a Bloxity-hosted image, and tied to no account.
+ *
+ * `name` and `avatarUrl` are what Bloxity's SDK says this player is right now -
+ * the signed-in account's name and picture, or a guest's. DISPLAY ONLY: the
+ * server cleans them, prefers anything it verified with Bloxity itself, and
+ * never lets them reach an account's Bux. They matter because the portal hands
+ * an embedded game its user object whether or not it also hands it a token, and
+ * a signed-in player must not be shown as "Guest" for want of one.
  */
 export interface BloxityIdentityMessage {
   token: string;
   gameSlug?: string;
-  guestAvatar?: string;
+  /** The Bloxity name to show when the server has nothing verified. '' for a guest. */
+  name?: string;
+  /** The Bloxity avatar thumbnail to show when the server has nothing verified. */
+  avatarUrl?: string;
   /**
    * The sender's Bloxity avatar (`encodeAvatarLook`), replicated so every other
    * player sees the look they picked. '' means no Bloxity data at all - the only

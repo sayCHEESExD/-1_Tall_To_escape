@@ -55,6 +55,18 @@ export const sanitizeDisplayName = (raw: unknown): string => {
 const SAFE_PATH = /^[A-Za-z0-9._~/-]+(\?[A-Za-z0-9._~=&%+-]*)?$/;
 
 /**
+ * THE name a player is shown by: what the server verified with Bloxity, else
+ * what Bloxity's own SDK reported to their client, else `GUEST_NAME`.
+ *
+ * The reported name matters because the portal hands an embedded game its user
+ * object whether or not it also hands it a token to verify, and a signed-in
+ * player must not be shown as "Guest" for want of one. It is DISPLAY ONLY: only
+ * a verified token ever grants the Bloxity id that Bux is paid against.
+ */
+export const resolveShownName = (verified: unknown, reported: unknown): string =>
+  sanitizeDisplayName(verified) || sanitizeDisplayName(reported) || GUEST_NAME;
+
+/**
  * A Bloxity avatar thumbnail URL, or '' when it is not one.
  *
  * Accepts an https URL on `static.bloxity.io`, or the relative `/pfps/...` path

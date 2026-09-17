@@ -474,9 +474,20 @@ export class Game {
     const look = this.bloxity.available
       ? encodeAvatarLook(toAvatarSlots(this.bloxity.getEquipped()), this.bloxity.getProportions())
       : '';
-    const token = this.bloxity.getToken();
-    if (token) return { token, gameSlug: GAME_SLUG, guestAvatar: '', look };
-    return { token: null, gameSlug: GAME_SLUG, guestAvatar: this.bloxity.getGuest()?.pfp || '', look };
+    // The SDK's own user is the name everyone sees. The token goes with it and
+    // the server prefers what it can verify - but the portal hands an embedded
+    // game its user object whether or not it hands it a token, and a signed-in
+    // player must never show as "Guest" for want of one. A guest reports no
+    // name (only their picture), which is what makes them show as "Guest".
+    const user = this.bloxity.getUser();
+    const guest = user ? null : this.bloxity.getGuest();
+    return {
+      token: this.bloxity.getToken(),
+      gameSlug: GAME_SLUG,
+      name: user ? user.displayName || user.username || '' : '',
+      avatarUrl: user?.pfp || guest?.pfp || '',
+      look,
+    };
   }
 
   /** Send the identity to the room when it actually changed. */

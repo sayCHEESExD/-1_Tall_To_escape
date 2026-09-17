@@ -84,7 +84,8 @@ export class NetworkClient {
     const message: BloxityIdentityMessage = {
       token: identity.token ?? '',
       gameSlug: identity.gameSlug,
-      guestAvatar: identity.guestAvatar,
+      name: identity.name,
+      avatarUrl: identity.avatarUrl,
       look: identity.look,
     };
     this.room?.send(MessageType.BloxityIdentity, message);
@@ -122,8 +123,9 @@ export class NetworkClient {
           bloxityToken: identity?.token ?? undefined,
           // The slug an in-game token was issued for, so the server can verify it.
           gameSlug: identity?.gameSlug || undefined,
-          // Display only, for a guest; accepted by the server only as a Bloxity image.
-          guestAvatar: identity?.guestAvatar || undefined,
+          // Display only: the server prefers anything it verifies with Bloxity.
+          name: identity?.name || undefined,
+          avatarUrl: identity?.avatarUrl || undefined,
           // The Bloxity avatar to draw this player in, for everyone else.
           look: identity?.look || undefined,
         });

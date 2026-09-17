@@ -21,6 +21,7 @@ import {
   encodeAvatarLook,
   normalizeAvatarUrl,
   parseAvatarLook,
+  resolveShownName,
   sanitizeAvatarLook,
   sanitizeDisplayName,
 } from '../shared/dist/index.js';
@@ -245,6 +246,20 @@ console.log('\navatars: the look Bloxity gives a player is what everyone draws\n
   check('a malformed look is refused outright', sanitizeAvatarLook('nonsense') === '' && sanitizeAvatarLook('a,b|1') === '' && sanitizeAvatarLook(42) === '');
   check('an oversized look is refused', sanitizeAvatarLook('x'.repeat(500)) === '');
   check('what the server replicates is canonical, whatever the client spelled', sanitizeAvatarLook(sanitizeAvatarLook(custom)) === sanitizeAvatarLook(custom));
+}
+
+
+console.log('\nthe name shown: verified first, then what Bloxity told the client\n');
+{
+  check('a verified Bloxity account is shown by its name', resolveShownName('Chicken 877', '') === 'Chicken 877');
+  check(
+    "a signed-in player the portal gave no verifiable token is still shown by their Bloxity name",
+    resolveShownName('', 'Chicken 877') === 'Chicken 877',
+  );
+  check('the verified name WINS over whatever the client reported', resolveShownName('Real Name', 'I Am Someone Else') === 'Real Name');
+  check('a player Bloxity knows nothing about is Guest', resolveShownName('', '') === GUEST_NAME && resolveShownName(null, undefined) === GUEST_NAME);
+  check('a reported name is cleaned like any other', resolveShownName('', '  Chicken' + String.fromCharCode(0) + '  877 ') === 'Chicken 877');
+  check('a reported name cannot be a novel', resolveShownName('', 'x'.repeat(200)).length === 32);
 }
 
 

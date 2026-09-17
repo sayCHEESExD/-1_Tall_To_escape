@@ -57,14 +57,16 @@ export interface NetLeaderEntry {
 }
 
 /**
- * Who this client is, as Bloxity says: a token for a signed-in account (the
- * server verifies it against `gameSlug`), otherwise a guest with the SDK's
- * guest avatar thumbnail.
+ * Who this client is, as Bloxity says: the SDK's own name and picture for this
+ * player, plus the token (if the portal gave one) that lets the server verify
+ * them. The name is what everyone sees when the server has nothing verified.
  */
 export interface IdentityPayload {
   token: string | null;
   gameSlug: string;
-  guestAvatar: string;
+  /** The signed-in Bloxity name; '' for a guest, who shows as "Guest". */
+  name: string;
+  avatarUrl: string;
   /** This client's Bloxity avatar, encoded; '' without Bloxity. */
   look: string;
 }

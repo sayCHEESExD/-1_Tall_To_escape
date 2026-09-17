@@ -4,10 +4,9 @@ import {
   MessageType,
   SPAWN_POSITION,
   SPAWN_ROTATION_Y,
-  GUEST_NAME,
   normalizeAvatarUrl,
+  resolveShownName,
   sanitizeAvatarLook,
-  sanitizeDisplayName,
   type BloxityIdentityMessage,
   type ClaimWinMessage,
   type IndexMessage,
@@ -49,8 +48,9 @@ interface JoinOptions {
   bloxityToken?: string;
   /** The slug the client's Bloxity SDK runs as; in-game tokens are verified against it. */
   gameSlug?: string;
-  /** Without a token: the Bloxity guest avatar thumbnail, display only. */
-  guestAvatar?: string;
+  /** What Bloxity's SDK says this player is, display only. */
+  name?: string;
+  avatarUrl?: string;
   /** The Bloxity avatar being worn, display only. */
   look?: string;
 }
@@ -181,7 +181,8 @@ export class GameRoom extends Room<GameState> {
     this.resolveIdentity(client.sessionId, {
       token: typeof options.bloxityToken === 'string' ? options.bloxityToken : '',
       gameSlug: options.gameSlug,
-      guestAvatar: options.guestAvatar,
+      name: options.name,
+      avatarUrl: options.avatarUrl,
       look: options.look,
     });
 
@@ -287,12 +288,12 @@ export class GameRoom extends Room<GameState> {
    * Resolve who this player is - the name and avatar everyone sees - and hand
    * over anything their account bought.
    *
-   * With a token, Bloxity is asked (an in-game token against the game's slug),
-   * and the account's display name and avatar thumbnail become the player's.
-   * Without one (or with one Bloxity refuses) the player is `GUEST_NAME` with
-   * their Bloxity guest avatar - never Bloxity's random guest name. A guest is
-   * never given a Bloxity id, so nothing they send reaches anyone's Bux.
-   * Internal ids are never shown.
+   * The name shown is, in order: what the SERVER verified with Bloxity from the
+   * player's token; then what Bloxity's own SDK reported to their client (the
+   * portal hands an embedded game its user object even when it hands it no
+   * token, and a signed-in player must not show as "Guest" for want of one);
+   * then `GUEST_NAME`. Only the first grants a Bloxity id, so nothing a client
+   * reports can reach an account's Bux. Internal ids are never shown.
    * Every call supersedes the one before it, so a slow verification of an old
    * token can never overwrite a newer answer.
    */
@@ -301,14 +302,16 @@ export class GameRoom extends Room<GameState> {
     this.identityChecks.set(sessionId, check);
     const token = typeof message.token === 'string' ? message.token : '';
 
-    // The avatar is DISPLAY data, the same for a guest and a signed-in account,
-    // so it lands immediately rather than waiting on Bloxity to answer.
+    // Display data - the worn avatar, and the name and picture the SDK reports -
+    // lands immediately rather than waiting on Bloxity to answer.
     const player = this.state.players.get(sessionId);
-    if (player) player.avatar = sanitizeAvatarLook(message.look);
+    if (player) {
+      player.avatar = sanitizeAvatarLook(message.look);
+      this.showAsReported(sessionId, player, message);
+    }
 
     if (!token) {
       this.bloxityIds.delete(sessionId);
-      if (player) this.showAsGuest(sessionId, player, message);
       return;
     }
 
@@ -318,23 +321,29 @@ export class GameRoom extends Room<GameState> {
       const player = this.state.players.get(sessionId);
       if (!player) return;
       if (!user) {
+        // Unverified: keep showing what their SDK reported rather than demoting
+        // a signed-in player to "Guest". They simply get no Bloxity id.
         this.bloxityIds.delete(sessionId);
-        this.showAsGuest(sessionId, player, message);
+        logger.warn(SCOPE, `${sessionId} could not be verified; showing "${player.displayName}" as reported`);
         return;
       }
       this.bloxityIds.set(sessionId, user.id);
-      player.displayName = sanitizeDisplayName(user.displayName) || sanitizeDisplayName(user.username) || GUEST_NAME;
-      player.avatarUrl = user.avatarUrl;
+      player.displayName = resolveShownName(user.displayName || user.username, message.name);
+      player.avatarUrl = user.avatarUrl || normalizeAvatarUrl(message.avatarUrl);
       logger.info(SCOPE, `${sessionId} verified with Bloxity as "${player.displayName}"`);
       this.persist(sessionId, player);
       this.applyGrants(sessionId, player);
     });
   }
 
-  /** Not signed in: `GUEST_NAME`, with their Bloxity guest avatar if it is a Bloxity-hosted one. */
-  private showAsGuest(sessionId: string, player: PlayerState, message: Partial<BloxityIdentityMessage>): void {
-    player.displayName = GUEST_NAME;
-    player.avatarUrl = normalizeAvatarUrl(message.guestAvatar);
+  /**
+   * The name and picture Bloxity's SDK reported for this player. Shown until (or
+   * unless) the server verifies something better; a player whose SDK reports no
+   * name at all is `GUEST_NAME`.
+   */
+  private showAsReported(sessionId: string, player: PlayerState, message: Partial<BloxityIdentityMessage>): void {
+    player.displayName = resolveShownName('', message.name);
+    player.avatarUrl = normalizeAvatarUrl(message.avatarUrl);
     this.persist(sessionId, player);
   }
 

@@ -161,8 +161,9 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
 
 - The SDK (`window.Legion.SDK`) loads from `https://sdk.bloxity.io/legion-sdk.min.js` in
   `client/index.html`. **Only `client/src/bloxity/Bloxity.ts` touches it**, and every call
-  is guarded: a blocked CDN must never stop play. Slug: `tall-escape`
-  (`VITE_BLOXITY_GAME_ID` overrides).
+  is guarded: a blocked CDN must never stop play. Slug: `BLOXITY_GAME_ID`
+  (`tall-to-escape`, the id the deploy workflow publishes to; `VITE_BLOXITY_GAME_ID`
+  overrides it at build time, and the server reads the same id from its own env).
 - There is exactly ONE `auth.onUserChanged` subscription (in `Bloxity`); UI fans out from
   it. The user object is never cached.
 - Bux purchases pass a SKU only. Wins are granted by the SERVER when Bloxity's webhook
@@ -172,12 +173,17 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
   `wallet.add` to the session whose token the server verified with Bloxity.
 - **Player names and avatars come from Bloxity, and only Bloxity.** There is no identity
   system of this game's own and no generated handle. The server sets `displayName` and
-  `avatarUrl` on `PlayerState`. For a token, from Bloxity: an in-game token is a GAME
-  CAPABILITY that the account routes refuse, so it is verified the SDK's way,
-  `POST /v1/auth/game-token/verify` with the slug (the client's `gameSlug`, then
-  `BLOXITY_GAME_ID`); only then as an account token (`/v1/social/profile`, `/v1/auth/me`).
-  Not signed in is ALWAYS `GUEST_NAME` - never Bloxity's random guest name - with the
-  SDK's guest avatar (`auth.getGuest().pfp`, display-only `guestAvatar`). `sanitizeDisplayName` and `normalizeAvatarUrl`
+  `avatarUrl` on `PlayerState` by ONE rule, `resolveShownName`: what the server VERIFIED
+  with Bloxity, else what Bloxity's SDK reported to that client (display-only `name` and
+  `avatarUrl` on the identity message), else `GUEST_NAME`. The reported name is not
+  tidiness: the portal hands an embedded game its user object whether or not it also hands
+  it a token, and a signed-in player must never show as "Guest" for want of one. A guest
+  reports no name, which is what shows them as `GUEST_NAME` - never Bloxity's random guest
+  name. Verification still runs and still WINS: an in-game token is a GAME CAPABILITY the
+  account routes refuse, so it goes to `POST /v1/auth/game-token/verify` with the slug (the
+  client's `gameSlug`, then `BLOXITY_GAME_ID`), and only then to `/v1/social/profile` and
+  `/v1/auth/me`. Only a VERIFIED token grants the Bloxity id Bux is paid against - nothing a
+  client reports ever can. `sanitizeDisplayName` and `normalizeAvatarUrl`
   (static.bloxity.io only) clean both. The name tag over every character (`NameTag`,
   local and remote), the scoreboards ([avatar] Name) and every name UI read those
   replicated fields. Profiles keep the last name and thumbnail for offline board rows.
