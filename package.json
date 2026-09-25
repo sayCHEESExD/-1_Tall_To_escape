@@ -29,7 +29,8 @@
     "verify:services": "npm run build:server && node scripts/verify-services.mjs",
     "verify:bloxity": "npm run build:server && node scripts/verify-bloxity.mjs",
     "verify": "npm run verify:assets && npm run verify:course && npm run verify:progression && npm run verify:services && node scripts/verify-bloxity.mjs",
-    "verify:capacity": "node scripts/verify-capacity.mjs"
+    "verify:capacity": "node scripts/verify-capacity.mjs",
+    "verify:persistence": "npm run build:server && node scripts/verify-persistence.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

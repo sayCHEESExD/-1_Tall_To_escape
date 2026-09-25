@@ -63,7 +63,6 @@ export interface NetLeaderEntry {
  */
 export interface IdentityPayload {
   token: string | null;
-  gameSlug: string;
   /** The signed-in Bloxity name; '' for a guest, who shows as "Guest". */
   name: string;
   avatarUrl: string;

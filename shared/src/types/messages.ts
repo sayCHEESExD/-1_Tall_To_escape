@@ -11,7 +11,7 @@ export interface MoveMessage {
   cameraYaw: number;
 }
 
-export type RespawnReason = 'outOfWorld' | 'win' | 'manual' | 'join' | 'rebirth';
+export type RespawnReason = 'outOfWorld' | 'win' | 'manual' | 'join' | 'rebirth' | 'account';
 
 export interface RespawnMessage {
   x: number;
@@ -54,8 +54,8 @@ export interface PetHatchedMessage {
  * with Bloxity, so nobody can claim another account's paid-for Bux grants by
  * naming its id. Empty means not signed in.
  *
- * `gameSlug` is the slug the client's SDK was initialised with: a token issued
- * inside a game is a game capability, which Bloxity verifies against that slug.
+ * The server verifies the token against ITS OWN game id, never one a client
+ * supplies - a capability minted for another game must not verify here.
  *
  * `name` and `avatarUrl` are what Bloxity's SDK says this player is right now -
  * the signed-in account's name and picture, or a guest's. DISPLAY ONLY: the
@@ -66,7 +66,6 @@ export interface PetHatchedMessage {
  */
 export interface BloxityIdentityMessage {
   token: string;
-  gameSlug?: string;
   /** The Bloxity name to show when the server has nothing verified. '' for a guest. */
   name?: string;
   /** The Bloxity avatar thumbnail to show when the server has nothing verified. */

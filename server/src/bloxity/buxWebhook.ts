@@ -1,5 +1,14 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { BuxGrants } from './BuxGrants.js';
+import { EventEmitter } from 'node:events';
+import { logger } from '../util/logger.js';
+import type { GrantStore } from './BuxGrants.js';
+
+/**
+ * `recorded` (accountId) fires on THIS pod once a grant is durable, so a room
+ * holding that account applies it at once instead of on its next poll. Rooms on
+ * other pods find it by polling storage.
+ */
+export const grantEvents = new EventEmitter();
 
 /** Where Bloxity delivers a paid purchase (register `<backend>/bloxity/bux` as the webhook). */
 export const BUX_WEBHOOK_PATH = '/bloxity/bux';
@@ -21,17 +30,19 @@ export interface WebhookOptions {
  * it is tested without a socket.
  *
  * ANSWERING 2xx IS THE CONTRACT: Bloxity refunds a purchase whose webhook did
- * not succeed. So anything safely RECORDED is 2xx - including a SKU this build
- * does not know. The non-2xx answers are the cases where a refund is correct: a
- * bad secret, an unrecordable body, or a server with no secret configured at
- * all, which would otherwise grant Wins to anyone who found the URL.
+ * not succeed. So a 2xx is sent only once the grant is DURABLY recorded -
+ * including a SKU this build does not know (recorded as seen). The non-2xx
+ * answers are the cases where a retry or refund is correct: a bad secret, an
+ * unrecordable body, storage that cannot take the grant right now (503), or a
+ * server with no secret configured at all, which would otherwise grant Wins to
+ * anyone who found the URL.
  */
-export const processBuxWebhook = (
+export const processBuxWebhook = async (
   suppliedSecret: string | undefined,
   rawBody: string,
-  grants: BuxGrants,
+  grants: GrantStore,
   options: WebhookOptions,
-): WebhookResult => {
+): Promise<WebhookResult> => {
   if (options.secret) {
     if (!suppliedSecret || !safeEqual(suppliedSecret, options.secret)) {
       return { status: 401, body: { ok: false, error: 'bad secret' } };
@@ -61,7 +72,14 @@ export const processBuxWebhook = (
     return { status: 400, body: { ok: false, error: 'missing transactionId, userId or sku' } };
   }
 
-  const outcome = grants.record(userId, transactionId, sku);
+  let outcome;
+  try {
+    outcome = await grants.record(userId, transactionId, sku);
+  } catch (error) {
+    logger.error('bux', `could not record ${transactionId} (${String(error)}) - answering 503 so Bloxity retries`);
+    return { status: 503, body: { ok: false, error: 'storage unavailable' } };
+  }
+  if (outcome === 'recorded') grantEvents.emit('recorded', userId);
   return { status: 200, body: { ok: true, transactionId, outcome } };
 };
 

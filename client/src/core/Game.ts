@@ -14,7 +14,7 @@ import {
 } from '@highjump/shared';
 import { AudioManager } from '../audio/AudioManager.js';
 import { PlayerAudio } from '../audio/PlayerAudio.js';
-import { Bloxity, GAME_SLUG } from '../bloxity/Bloxity.js';
+import { Bloxity } from '../bloxity/Bloxity.js';
 import { BloxityAvatar } from '../bloxity/BloxityAvatar.js';
 import { toAvatarSlots, type LegionEquipped, type LegionProportions } from '../bloxity/legionTypes.js';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera.js';
@@ -483,7 +483,6 @@ export class Game {
     const guest = user ? null : this.bloxity.getGuest();
     return {
       token: this.bloxity.getToken(),
-      gameSlug: GAME_SLUG,
       name: user ? user.displayName || user.username || '' : '',
       avatarUrl: user?.pfp || guest?.pfp || '',
       look,

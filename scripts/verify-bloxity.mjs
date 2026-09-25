@@ -25,8 +25,8 @@ import {
   sanitizeAvatarLook,
   sanitizeDisplayName,
 } from '../shared/dist/index.js';
-import { BuxGrants, SKU_WINS } from '../server/dist/bloxity/BuxGrants.js';
-import { verifyBloxityToken } from '../server/dist/bloxity/bloxityIdentity.js';
+import { JsonGrantStore, SKU_WINS } from '../server/dist/bloxity/BuxGrants.js';
+import { BloxityVerifier, VERIFY_URL } from '../server/dist/bloxity/BloxityVerifier.js';
 import { processBuxWebhook } from '../server/dist/bloxity/buxWebhook.js';
 import { LeaderboardService } from '../server/dist/progression/LeaderboardService.js';
 
@@ -58,58 +58,63 @@ const SIGNED = { secret: 's3cret', allowUnsigned: false };
 
 console.log('\nwebhook authentication\n');
 {
-  const grants = new BuxGrants(null);
-  check('no secret header is refused', processBuxWebhook(undefined, body(), grants, SIGNED).status === 401);
-  check('a wrong secret is refused', processBuxWebhook('nope', body(), grants, SIGNED).status === 401);
-  check('a refused delivery grants nothing', grants.drain('user-a').length === 0);
+  const grants = new JsonGrantStore(null);
+  check('no secret header is refused', (await processBuxWebhook(undefined, body(), grants, SIGNED)).status === 401);
+  check('a wrong secret is refused', (await processBuxWebhook('nope', body(), grants, SIGNED)).status === 401);
+  check('a refused delivery grants nothing', (await grants.drain('user-a')).length === 0);
   check(
     'a server with NO secret configured refuses rather than granting to anyone',
-    processBuxWebhook(undefined, body(), grants, { secret: '', allowUnsigned: false }).status === 503,
+    (await processBuxWebhook(undefined, body(), grants, { secret: '', allowUnsigned: false })).status === 503,
   );
   check(
     'unsigned deliveries are accepted only when explicitly allowed (local dev)',
-    processBuxWebhook(undefined, body({ transactionId: 'dev-1' }), grants, { secret: '', allowUnsigned: true }).status === 200,
+    (await processBuxWebhook(undefined, body({ transactionId: 'dev-1' }), grants, { secret: '', allowUnsigned: true })).status === 200,
   );
 }
 
 console.log('\nwebhook payloads\n');
 {
-  const grants = new BuxGrants(null);
-  check('malformed JSON is a 400', processBuxWebhook('s3cret', '{not json', grants, SIGNED).status === 400);
-  check('a missing transactionId is a 400', processBuxWebhook('s3cret', body({ transactionId: '' }), grants, SIGNED).status === 400);
-  check('a missing userId is a 400', processBuxWebhook('s3cret', body({ userId: undefined }), grants, SIGNED).status === 400);
+  const grants = new JsonGrantStore(null);
+  check('malformed JSON is a 400', (await processBuxWebhook('s3cret', '{not json', grants, SIGNED)).status === 400);
+  check('a missing transactionId is a 400', (await processBuxWebhook('s3cret', body({ transactionId: '' }), grants, SIGNED)).status === 400);
+  check('a missing userId is a 400', (await processBuxWebhook('s3cret', body({ userId: undefined }), grants, SIGNED)).status === 400);
 
-  const first = processBuxWebhook('s3cret', body(), grants, SIGNED);
+  const first = await processBuxWebhook('s3cret', body(), grants, SIGNED);
   check('a valid delivery is 2xx', first.status === 200);
-  const retry = processBuxWebhook('s3cret', body(), grants, SIGNED);
+  const retry = await processBuxWebhook('s3cret', body(), grants, SIGNED);
   check('a RETRIED delivery is still 2xx (so Bloxity stops retrying)', retry.status === 200);
   check('but reports it as a duplicate', retry.body.outcome === 'duplicate');
 
-  const owed = grants.drain('user-a');
+  const owed = await grants.drain('user-a');
   check('the purchase is queued exactly ONCE', owed.length === 1, `queued ${owed.length}`);
   check('for the SKU table value, never a client figure', owed[0]?.wins === SKU_WINS.wins_small);
-  check('draining empties the queue', grants.drain('user-a').length === 0);
-  check('grants belong to the paying account only', grants.drain('user-b').length === 0);
+  check('draining empties the queue', (await grants.drain('user-a')).length === 0);
+  check('grants belong to the paying account only', (await grants.drain('user-b')).length === 0);
 
-  const unknown = processBuxWebhook('s3cret', body({ transactionId: 'txn-x', sku: 'from_the_future' }), grants, SIGNED);
+  const unknown = await processBuxWebhook('s3cret', body({ transactionId: 'txn-x', sku: 'from_the_future' }), grants, SIGNED);
   check('an unknown SKU is still 2xx, so a real purchase is not refunded', unknown.status === 200);
-  check('and grants nothing', grants.drain('user-a').length === 0);
-  check('the price in the payload is never used as a grant', !Object.values(SKU_WINS).includes(100));}
+  check('and grants nothing', (await grants.drain('user-a')).length === 0);
+  check('the price in the payload is never used as a grant', !Object.values(SKU_WINS).includes(100));
+
+  const broken = { record: async () => { throw new Error('database down'); }, drain: async () => [] };
+  const down = await processBuxWebhook('s3cret', body({ transactionId: 'txn-down' }), broken, SIGNED);
+  check('storage that cannot take the grant answers 503, so Bloxity retries instead of believing it', down.status === 503);
+}
 
 console.log('\npersistence\n');
 {
   const dir = mkdtempSync(join(tmpdir(), 'tallescape-bux-'));
   const file = join(dir, 'bux-grants.json');
   try {
-    const before = new BuxGrants(file);
-    before.record('user-a', 'txn-9', 'wins_large');
-    check('the queue is on disk before the webhook answers', readFileSync(file, 'utf8').includes('txn-9'));
+    const before = new JsonGrantStore(file);
+    await before.record('user-a', 'txn-9', 'wins_large');
+    check('the grant is on disk before the webhook answers', readFileSync(file, 'utf8').includes('txn-9'));
 
-    const after = new BuxGrants(file);
-    check('a restarted server still owes the purchase', after.drain('user-a')[0]?.wins === SKU_WINS.wins_large);
+    const after = new JsonGrantStore(file);
+    check('a restarted server still owes the purchase', (await after.drain('user-a'))[0]?.wins === SKU_WINS.wins_large);
     check(
       'and still recognises the transaction, so a post-restart retry does not pay twice',
-      after.record('user-a', 'txn-9', 'wins_large') === 'duplicate',
+      (await after.record('user-a', 'txn-9', 'wins_large')) === 'duplicate',
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -147,7 +152,7 @@ console.log('\nplayer identity: Bloxity display names and avatars, never interna
     ['session-b', { displayName: '', avatarUrl: '', wins: 10, height: 100, rebirths: 0, playSeconds: 120 }],
   ]);
   const ids = new Map([['session-a', 'p_internal_abc123'], ['session-b', 'p_internal_def456']]);
-  new LeaderboardService().update(1, board, live, ids);
+  new LeaderboardService().update(1, board, live, ids, []);
   const shown = [...board.wins, ...board.height, ...board.time].filter((row) => row.name);
   check('the boards show the Bloxity display name', board.wins[0].name === 'Chicken 877' && board.height[0].name === 'Chicken 877');
   check('with that player\'s Bloxity avatar thumbnail', board.wins[0].avatarUrl === avatar);
@@ -159,61 +164,76 @@ console.log('\nplayer identity: Bloxity display names and avatars, never interna
   );
 }
 
-console.log("\ntoken verification: a signed-in player is their Bloxity account, not Guest\n");
+console.log('\ntoken verification: three outcomes, Bloxity decides, fail closed\n');
 {
   const realFetch = globalThis.fetch;
-  const reply = (status, body = {}) =>
-    new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-  const pathOf = (url) => new URL(url).pathname;
+  const reply = (status, payload = {}) =>
+    new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+  const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
+  let calls = [];
+  const serve = (handler) => {
+    calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), method: init.method, auth: init.headers?.Authorization, body: init.body ? JSON.parse(init.body) : null });
+      return handler(String(url), init);
+    };
+  };
   try {
-    // An in-game token: Bloxity's account routes refuse it, like the live API does.
-    const calls = [];
-    globalThis.fetch = async (url, init = {}) => {
-      const path = pathOf(url);
-      calls.push({ path, method: init.method ?? 'GET', body: init.body ?? '', auth: init.headers?.Authorization });
-      if (path === '/v1/auth/game-token/verify') {
-        return JSON.parse(init.body).gameSlug === 'tall-to-escape'
-          ? reply(200, { user: { _id: 'acc-1', username: 'chicken877', displayName: 'Chicken 877', pfp: '/pfps/s3_h12.png' } })
-          : reply(401, { code: 'GAME_TOKEN_INVALID' });
-      }
-      return reply(401, { code: 'GAME_TOKEN_REQUIRED' });
-    };
-    const user = await verifyBloxityToken('game-capability', 'https://api.test', ['tall-to-escape']);
+    check('the Bloxity API is a constant, not configuration', VERIFY_URL === 'https://api.bloxity.io/v1/auth/game-token/verify');
+
+    serve(() => reply(200, { user: { _id: 'acc-1', username: 'chicken877', displayName: 'Chicken 877', pfp: '/pfps/s3_h12.png' } }));
+    const verifier = new BloxityVerifier('tall-to-escape');
+    const token = jwt({ exp: Math.floor(Date.now() / 1000) + 3600 });
+    const first = await verifier.verify(token);
     check(
-      "an in-game token is verified the SDK's way: POST /v1/auth/game-token/verify with the game slug",
-      calls[0]?.path === '/v1/auth/game-token/verify' && calls[0].method === 'POST' &&
-        JSON.parse(calls[0].body).gameSlug === 'tall-to-escape' && calls[0].auth === 'Bearer game-capability',
+      "it asks exactly as Bloxity's SDK does: POST game-token/verify, Bearer token, THIS server's slug",
+      calls[0]?.url === VERIFY_URL && calls[0].method === 'POST' && calls[0].auth === `Bearer ${token}` &&
+        calls[0].body?.gameSlug === 'tall-to-escape',
     );
-    check('the signed-in player is shown by their Bloxity display name', user?.displayName === 'Chicken 877' && user?.id === 'acc-1');
-    check('with their Bloxity avatar thumbnail', user?.avatarUrl === 'https://static.bloxity.io/img/pfps/s3_h12.png?width=128&quality=85');
+    check('a 2xx with a string _id is VERIFIED', first.status === 'verified' && first.user.id === 'acc-1' && first.user.displayName === 'Chicken 877');
+    check('with the account picture', first.user.avatarUrl === 'https://static.bloxity.io/img/pfps/s3_h12.png?width=128&quality=85');
+    await verifier.verify(token);
+    check('a verified answer is cached (keyed by a hash of the token)', calls.length === 1);
 
-    calls.length = 0;
-    const second = await verifyBloxityToken('game-capability', 'https://api.test', ['tall-escape', 'tall-to-escape']);
-    check('a slug that refuses the token is followed by the next one', second?.displayName === 'Chicken 877' && calls.length === 2);
+    serve(() => reply(200, { _id: 'acc-2', username: 'owl' }));
+    const bare = await new BloxityVerifier('tall-to-escape').verify(jwt({ exp: Math.floor(Date.now() / 1000) + 60 }));
+    check('the user may also be the reply itself', bare.status === 'verified' && bare.user.id === 'acc-2');
 
-    // A plain account token (not issued inside a game).
-    globalThis.fetch = async (url) => {
-      const path = pathOf(url);
-      if (path === '/v1/social/profile') return reply(200, { user: { _id: 'acc-2', username: 'owl', displayName: 'Night Owl' } });
-      if (path === '/v1/auth/me') return reply(200, { user: { _id: 'acc-2', pfp: 'https://static.bloxity.io/img/pfps/s5.png' } });
-      return reply(401);
-    };
-    const account = await verifyBloxityToken('account-token', 'https://api.test', ['tall-to-escape']);
-    check(
-      'an account token still verifies through the profile routes',
-      account?.displayName === 'Night Owl' && account?.avatarUrl === 'https://static.bloxity.io/img/pfps/s5.png',
-    );
+    serve(() => reply(200, { user: { id: 'acc-3', username: 'no-underscore' } }));
+    const noId = await new BloxityVerifier('tall-to-escape').verify('tok-no-id');
+    check('a 2xx WITHOUT a string _id is not verified (fail closed)', noId.status !== 'verified');
 
-    globalThis.fetch = async () => reply(401);
-    check('a token Bloxity refuses everywhere is no account', (await verifyBloxityToken('bad', 'https://api.test', ['tall-to-escape'])) === null);
+    serve(() => reply(200, { user: { _id: 'acc-4' } }));
+    const expired = new BloxityVerifier('tall-to-escape');
+    const old = jwt({ exp: Math.floor(Date.now() / 1000) - 10 });
+    await expired.verify(old);
+    await expired.verify(old);
+    check("a verified answer is never cached past the token's exp", calls.length === 2);
 
-    const sent = [];
-    globalThis.fetch = async (url, init = {}) => {
-      if (pathOf(url) === '/v1/auth/game-token/verify') sent.push(JSON.parse(init.body).gameSlug);
-      return reply(401);
-    };
-    await verifyBloxityToken('x', 'https://api.test', ['../evil', '', 'tall-to-escape', 'tall-to-escape']);
-    check('only well-formed slugs are tried, once each', sent.length === 1 && sent[0] === 'tall-to-escape', sent.join(','));
+    serve(() => reply(401, { code: 'GAME_TOKEN_INVALID' }));
+    const rejecting = new BloxityVerifier('tall-to-escape');
+    const rejected = await rejecting.verify('forged');
+    await rejecting.verify('forged');
+    check('a 401 is REJECTED', rejected.status === 'rejected');
+    check('and a rejection is cached briefly (Bloxity is not asked again at once)', calls.length === 1);
+
+    serve(() => reply(503));
+    const flaky = new BloxityVerifier('tall-to-escape');
+    const down = await flaky.verify('tok-503');
+    await flaky.verify('tok-503');
+    check('a 5xx is UNAVAILABLE, not rejected', down.status === 'unavailable');
+    check('and "unavailable" is never cached', calls.length === 2);
+
+    serve(() => { throw new TypeError('network down'); });
+    check('a network failure is UNAVAILABLE', (await new BloxityVerifier('tall-to-escape').verify('tok-net')).status === 'unavailable');
+
+    serve((url, init) => (JSON.parse(init.body).gameSlug === 'tall-to-escape' ? reply(200, { user: { _id: 'x' } }) : reply(401)));
+    const other = await new BloxityVerifier('some-other-game').verify('tok-slug');
+    check("a server for another game cannot verify this game's capability", other.status === 'rejected');
+
+    const empty = await new BloxityVerifier('tall-to-escape').verify('');
+    const huge = await new BloxityVerifier('tall-to-escape').verify('x'.repeat(5000));
+    check('an empty or oversized token never reaches Bloxity', empty.status === 'rejected' && huge.status === 'rejected');
   } finally {
     globalThis.fetch = realFetch;
   }

@@ -83,7 +83,6 @@ export class NetworkClient {
   sendIdentity(identity: IdentityPayload): void {
     const message: BloxityIdentityMessage = {
       token: identity.token ?? '',
-      gameSlug: identity.gameSlug,
       name: identity.name,
       avatarUrl: identity.avatarUrl,
       look: identity.look,
@@ -121,8 +120,6 @@ export class NetworkClient {
           playerId,
           // Optional. Verified by the server with Bloxity, never trusted as-is.
           bloxityToken: identity?.token ?? undefined,
-          // The slug an in-game token was issued for, so the server can verify it.
-          gameSlug: identity?.gameSlug || undefined,
           // Display only: the server prefers anything it verifies with Bloxity.
           name: identity?.name || undefined,
           avatarUrl: identity?.avatarUrl || undefined,

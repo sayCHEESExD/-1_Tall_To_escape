@@ -8,6 +8,12 @@
 #
 # Bloxity Legion injects PORT (and NODE_ENV) at deploy time; the server reads it
 # and serves GET /health on the same port. It runs as the non-root `node` user.
+#
+# PLAYER PROGRESS: Legion also injects MONGODB_URI - a managed MongoDB isolated
+# to this game + channel - and the server keeps every profile and every Bux
+# purchase there. Progress therefore survives restarts, idle scale-to-zero and
+# deploys, and signed-in players keep it across browsers and devices. The
+# `mongodb` driver is hoisted to the root node_modules, which is what is copied.
 
 # ---------------------------------------------------------------- build ----
 FROM node:20-alpine AS build
@@ -39,7 +45,10 @@ COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/server/package.json ./server/package.json
 COPY --from=build /app/server/dist ./server/dist
 
-# Profiles are a JSON file. Mount a volume here or a redeploy wipes progression.
+# The JSON store here is ONLY the fallback for running this image WITHOUT
+# MONGODB_URI (e.g. self-hosted): then mount a volume on /data, or a redeploy
+# wipes progress. With MONGODB_URI set (every Legion pod), /data is used only to
+# import a legacy profiles.json into MongoDB, insert-only, on boot.
 ENV HIGHJUMP_DATA_DIR=/data
 VOLUME ["/data"]
 RUN mkdir -p /data && chown -R node:node /data
@@ -49,5 +58,6 @@ EXPOSE 2571
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||2571)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# Straight to node: npm swallows SIGTERM, which flushes player profiles.
+# Straight to node: npm swallows SIGTERM, which drains the rooms and waits for
+# every queued profile write to land before the process exits.
 CMD ["node", "server/dist/index.js"]

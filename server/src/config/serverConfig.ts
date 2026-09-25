@@ -18,10 +18,14 @@ export interface ServerConfig {
   readonly buxWebhookSecret: string;
   /** Accept unsigned webhooks when no secret is set. Local development only. */
   readonly buxAllowUnsigned: boolean;
-  /** Bloxity's API, for verifying player tokens. */
-  readonly bloxityApiBase: string;
   /** This game's Bloxity id, which in-game tokens are verified against. Legion injects `BLOXITY_GAME_ID`. */
   readonly bloxityGameId: string;
+  /**
+   * Legion's managed MongoDB for this game + channel (`MONGODB_URI`, injected
+   * into every pod). Unset locally, where the JSON files are the store. The
+   * Bloxity API host is deliberately NOT configurable (`BLOXITY_API`).
+   */
+  readonly mongoUri: string;
 }
 
 const int = (value: string | undefined, fallback: number): number => {
@@ -47,6 +51,6 @@ export const serverConfig: ServerConfig = {
   dataDir: resolve(process.env['HIGHJUMP_DATA_DIR'] ?? 'data'),
   buxWebhookSecret: process.env['BLOXITY_WEBHOOK_SECRET'] ?? '',
   buxAllowUnsigned: process.env['BLOXITY_WEBHOOK_ALLOW_UNSIGNED'] === '1',
-  bloxityApiBase: (process.env['BLOXITY_API_BASE'] ?? 'https://api.bloxity.io').replace(/\/+$/, ''),
   bloxityGameId: process.env['BLOXITY_GAME_ID']?.trim() || BLOXITY_GAME_ID,
+  mongoUri: process.env['MONGODB_URI']?.trim() ?? '',
 };

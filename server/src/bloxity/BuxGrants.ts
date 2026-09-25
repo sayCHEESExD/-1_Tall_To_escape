@@ -10,7 +10,7 @@ const SCOPE = 'bux';
  * The PRICE is not here and never may be: Bloxity charges from its own
  * catalogue keyed by the game slug. This is only the game's half - what a
  * bought SKU is worth in-game. The SKUs must match the products created for
- * `tall-escape` on bloxity.io.
+ * the game on bloxity.io.
  */
 export const SKU_WINS: Readonly<Record<string, number>> = {
   wins_small: 500,
@@ -23,24 +23,38 @@ export interface PendingGrant {
   readonly wins: number;
 }
 
+export type RecordOutcome = 'recorded' | 'duplicate' | 'unknown-sku';
+
+/**
+ * Purchases paid for and not yet handed over, keyed by the VERIFIED Bloxity
+ * account that paid (the webhook's `userId`, sent server-to-server by Bloxity
+ * behind a shared secret - never anything a browser said).
+ *
+ * A QUEUE, not a direct write: a player live in a room has Wins in replicated
+ * state that the next autosave writes over the stored profile. So the webhook
+ * only RECORDS, and a room holding that verified account drains it.
+ *
+ *  - `record` resolves only once the grant is DURABLE; the webhook answers 2xx
+ *    after it, because a 2xx tells Bloxity the purchase is safe.
+ *  - Each transaction pays out once, across retries, pods and restarts.
+ *  - `drain` claims ATOMICALLY, so two pods can never both apply one grant.
+ */
+export interface GrantStore {
+  record(accountId: string, transactionId: string, sku: string): Promise<RecordOutcome>;
+  drain(accountId: string): Promise<PendingGrant[]>;
+}
+
 interface StoredGrants {
   pending: Record<string, PendingGrant[]>;
   seen: string[];
 }
 
 /**
- * Purchases paid for and not yet handed over.
- *
- * A QUEUE, not a direct write: the webhook lands on the HTTP thread at a moment
- * of Bloxity's choosing, and a player who is live in a room has Wins in
- * replicated state that the next autosave writes over the stored profile. So
- * the webhook only RECORDS, and the room applies what is waiting.
- *
- * Written to disk BEFORE the webhook answers 2xx, because a 2xx is Bloxity's
- * signal that the purchase is safe. Transaction ids are remembered so a
- * retried webhook pays out once.
+ * The development grant store: one JSON file beside the profiles, written
+ * synchronously and atomically before anything is acknowledged. One process
+ * only, which is what makes its read-modify-write safe.
  */
-export class BuxGrants {
+export class JsonGrantStore implements GrantStore {
   private readonly pending = new Map<string, PendingGrant[]>();
   private readonly seen = new Set<string>();
 
@@ -49,46 +63,32 @@ export class BuxGrants {
     this.load();
   }
 
-  /**
-   * Record a paid purchase.
-   *
-   * @returns 'recorded', 'duplicate' for a retried transaction, or 'unknown-sku'
-   *          (still recorded as seen, so Bloxity is answered 2xx and does not
-   *          refund a purchase that was genuinely made).
-   */
-  record(bloxityId: string, transactionId: string, sku: string): 'recorded' | 'duplicate' | 'unknown-sku' {
+  async record(accountId: string, transactionId: string, sku: string): Promise<RecordOutcome> {
     if (this.seen.has(transactionId)) {
       logger.info(SCOPE, `duplicate webhook for ${transactionId}, ignored`);
       return 'duplicate';
     }
-    this.seen.add(transactionId);
-
     const wins = SKU_WINS[sku];
+    const queue = this.pending.get(accountId) ?? [];
+    const nextQueue = wins === undefined ? queue : [...queue, { transactionId, sku, wins }];
+    // Durable FIRST: memory only changes once the file has it.
+    this.save(accountId, nextQueue, transactionId);
+    this.seen.add(transactionId);
+    if (nextQueue.length > 0) this.pending.set(accountId, nextQueue);
     if (wins === undefined) {
       logger.warn(SCOPE, `unknown sku "${sku}" [${transactionId}] - nothing to grant`);
-      this.save();
       return 'unknown-sku';
     }
-
-    const queue = this.pending.get(bloxityId) ?? [];
-    queue.push({ transactionId, sku, wins });
-    this.pending.set(bloxityId, queue);
-    this.save();
-    logger.info(SCOPE, `queued ${sku} (+${wins} wins) for ${bloxityId} [${transactionId}]`);
+    logger.info(SCOPE, `queued ${sku} (+${wins} wins) for ${accountId} [${transactionId}]`);
     return 'recorded';
   }
 
-  /** Take everything waiting for a player. Empties their queue. */
-  drain(bloxityId: string): PendingGrant[] {
-    const queue = this.pending.get(bloxityId);
+  async drain(accountId: string): Promise<PendingGrant[]> {
+    const queue = this.pending.get(accountId);
     if (!queue || queue.length === 0) return [];
-    this.pending.delete(bloxityId);
-    this.save();
+    this.save(accountId, [], null);
+    this.pending.delete(accountId);
     return queue;
-  }
-
-  get hasPending(): boolean {
-    return this.pending.size > 0;
   }
 
   private load(): void {
@@ -100,17 +100,27 @@ export class BuxGrants {
       }
       for (const id of raw.seen ?? []) this.seen.add(id);
     } catch (error) {
-      logger.error(SCOPE, `could not read ${this.path}: ${String(error)}`);
+      const aside = `${this.path}.corrupt-${Date.now()}`;
+      logger.error(SCOPE, `could not read ${this.path} (${String(error)}); moving it aside to ${aside}`);
+      renameSync(this.path, aside);
     }
   }
 
-  /** Synchronous and atomic: it must be on disk before the webhook answers. */
-  private save(): void {
+  /** Synchronous and atomic: it must be on disk before the webhook answers. Throws if it is not. */
+  private save(accountId: string, queue: PendingGrant[], seenId: string | null): void {
     if (!this.path) return;
-    const data: StoredGrants = { pending: Object.fromEntries(this.pending), seen: [...this.seen] };
+    const pending = Object.fromEntries(this.pending);
+    if (queue.length > 0) pending[accountId] = queue;
+    else delete pending[accountId];
+    const data: StoredGrants = { pending, seen: seenId ? [...this.seen, seenId] : [...this.seen] };
     mkdirSync(dirname(this.path), { recursive: true });
     const temp = `${this.path}.tmp`;
     writeFileSync(temp, JSON.stringify(data));
     renameSync(temp, this.path);
+  }
+
+  /** Everything in the file, for the one-time import into MongoDB. */
+  snapshot(): StoredGrants {
+    return { pending: Object.fromEntries(this.pending), seen: [...this.seen] };
   }
 }

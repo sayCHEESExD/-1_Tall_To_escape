@@ -1,7 +1,7 @@
 import { GUEST_NAME, LEADERBOARD_SIZE, resolveHeight } from '@highjump/shared';
+import type { StoredProfile } from '../persistence/StoredProfile.js';
 import type { LeaderEntry, LeaderboardState } from '../rooms/state/GameState.js';
 import type { PlayerState } from '../rooms/state/PlayerState.js';
-import { profileStore } from './ProfileStore.js';
 
 const REFRESH_SECONDS = 2;
 
@@ -30,14 +30,17 @@ export class LeaderboardService {
     delta: number,
     board: LeaderboardState,
     live: Iterable<[string, PlayerState]>,
-    playerIds: ReadonlyMap<string, string>,
+    /** Session id -> the storage key that session saves under. */
+    sessionKeys: ReadonlyMap<string, string>,
+    /** Offline profiles (never a guest copy that moved to an account). */
+    stored: Iterable<[string, StoredProfile]>,
   ): void {
     this.timer -= delta;
     if (this.timer > 0) return;
     this.timer = REFRESH_SECONDS;
 
     const byId = new Map<string, Candidate>();
-    for (const [id, profile] of profileStore.entries()) {
+    for (const [id, profile] of stored) {
       byId.set(id, {
         name: profile.displayName || GUEST_NAME,
         avatarUrl: profile.avatarUrl,
@@ -48,7 +51,7 @@ export class LeaderboardService {
       });
     }
     for (const [sessionId, player] of live) {
-      const id = playerIds.get(sessionId);
+      const id = sessionKeys.get(sessionId);
       if (!id) continue;
       byId.set(id, {
         name: player.displayName || GUEST_NAME,

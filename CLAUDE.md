@@ -147,6 +147,76 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
 - Only deriving facts are persisted. Height, leg reach, jump physics and rates are
   recomputed on load.
 
+## Persistence and accounts
+
+Progress survives restarts, scale-to-zero and deploys, and a SIGNED-IN player's progress
+belongs to their Bloxity ACCOUNT on every browser and device. Guests keep the browser
+behaviour. These rules are load-bearing; `npm run verify:persistence` checks them.
+
+- **Storage.** `MONGODB_URI` set (Legion injects it: a managed database isolated to this
+  game + channel; the database is the one named in the URI) -> MongoDB, collections
+  `profiles` and `bux_grants`. Unset -> JSON files in `HIGHJUMP_DATA_DIR` (development).
+  `persistence/index.ts` is the only place a concrete store is named.
+- **The contract is PER KEY** (`ProfileStorage`: get / put / insertIfAbsent / loadAll /
+  flush), one document per player. Several pods share one database: nothing ever writes
+  a whole-map snapshot, and a JOIN reads its profile from storage, never from a cache.
+  The only cache is the leaderboards' (`ProfileService`: loaded at boot, re-read every
+  60 s, newer `updatedAt` wins).
+- **A failed read is never "no profile".** `get()` throws; `onAuth` then REFUSES the join
+  (code 4503) and the client's backoff retries. Letting someone in on an empty profile
+  would autosave it over their real one.
+- **Writes** queue the latest snapshot per key, write `updateOne($set, upsert)` (idempotent),
+  retry with backoff and are never dropped. A write `$set`s only `WRITTEN_FIELDS` and
+  `$unset`s only `CLEARABLE_FIELDS` (empty today), so fields this build does not know
+  survive. A newer queued snapshot never loses a queued migration marker.
+- **The Mongo driver's first connect is special:** if it fails, that client stays closed
+  ("Topology is closed") until `connect()` is called again. Every operation goes through
+  `MongoProfileStorage.ensureConnected()` (grants too), or a pod that booted with the
+  database down would never recover.
+- **Boot never fails on storage.** `/health` always answers 200 (with `storage` and
+  `storageOk`) or Legion restart-loops the pod; joins fail cleanly instead. Shutdown is
+  `gracefullyShutdown(false)` then `await flush()` and `close()` - without `false` Colyseus
+  exits before the flush runs.
+- **JSON store:** atomic temp + fsync + rename; a leftover `.tmp` is recovered (newer
+  `updatedAt` per key wins); a file that will not parse is MOVED ASIDE
+  (`.corrupt-<time>`), never overwritten. The loader keeps every field.
+- **Legacy import:** with MongoDB, `profiles.json` and `bux-grants.json` in the data dir
+  are imported on every boot with `$setOnInsert` - insert-only, never replace.
+- **Auth.** The client sends the portal TOKEN (never an account id) on join and in the
+  identity message whenever the login changes; the server verifies it in async `onAuth`
+  (`BloxityVerifier`) exactly as Bloxity's SDK does: `POST https://api.bloxity.io
+  /v1/auth/game-token/verify`, `Bearer <token>`, `{ gameSlug }` with THIS server's
+  `BLOXITY_GAME_ID` - never a client-supplied slug. The host is a CONSTANT. FAIL CLOSED:
+  only a 2xx whose user has a string `_id` is verified. Three outcomes: verified /
+  rejected (guest) / unavailable (timeout, network, 5xx, 429: guest for now, re-verified
+  on a backoff, never a permanent demotion). Verified answers are cached up to 5 min and
+  never past the token's `exp`; rejected ones 30 s; unavailable never. The cache key is a
+  hash of the token. The token is never verified locally: `JWT_SECRET` is the game's own
+  secret, not Bloxity's signing key.
+- **Keys** (`profileKeys.ts`): account `bloxity:<verified id>`; guest = the browser id.
+  A browser id using the reserved prefix is REFUSED (4401), or a guest could name
+  themselves into an account.
+- **First login** (`AccountResolver.ts`): an account's existing profile always wins and is
+  never touched by browser data. Only if it has none AND this browser's guest profile has
+  real progress (`hasProgress`; time alone is not) is the guest progress inserted with
+  `insertIfAbsent` + `migratedFrom`; only AFTER that succeeds is the guest copy marked
+  `migratedTo` (data kept as a recovery copy - a crash in between duplicates, never
+  loses). A lost insert race loads the winner. A `migratedTo` guest is never restored,
+  migrated again or ranked; that browser signed out plays fresh and UNSAVED, so the
+  recovery copy is never overwritten and one browser cannot seed a second account.
+- **Mid-session sign-in / sign-out** is a message on the LIVE session, never a reconnect
+  (a reconnect can reach another pod before the last write lands). While switching, the
+  session's autosaves are blocked; the profile being LEFT is saved from live state and
+  waited for; the new one is resolved (sign-in from a guest migrates the LIVE state, newer
+  than any autosave); then `FoodService.initialise`, pending grants, a place at spawn
+  (`'account'`), a save. If storage fails, the session STAYS on its current profile. Only
+  the newest login counts; one that arrives mid-switch is queued.
+- **Purchases** (`GrantStore`): the webhook answers 2xx only once the grant is DURABLE;
+  the transaction id is the unique key (pays out once across pods, retries, restarts);
+  `drain` claims atomically (pending -> applied) so two pods can never both apply one;
+  grants are drained ONLY against the session's verified account, on this pod at once
+  (`grantEvents`) and from other pods by a 10 s poll. SKU values are unchanged.
+
 ## Architecture rules
 
 - No god files. `shared/` never imports three, colyseus or the DOM. The client touches
@@ -169,8 +239,9 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
 - Bux purchases pass a SKU only. Wins are granted by the SERVER when Bloxity's webhook
   hits `POST /bloxity/bux` (secret header `x-legion-webhook-secret`, env
   `BLOXITY_WEBHOOK_SECRET`; without it every delivery is refused). The SKU -> Wins table
-  is `server/src/bloxity/BuxGrants.ts`; grants are queued to disk, then applied through
-  `wallet.add` to the session whose token the server verified with Bloxity.
+  is `server/src/bloxity/BuxGrants.ts`; grants are recorded durably (MongoDB
+  `bux_grants`, or the JSON file) before the webhook answers, then applied through
+  `wallet.add` to a session holding the account the server VERIFIED (see Persistence).
 - **Player names and avatars come from Bloxity, and only Bloxity.** There is no identity
   system of this game's own and no generated handle. The server sets `displayName` and
   `avatarUrl` on `PlayerState` by ONE rule, `resolveShownName`: what the server VERIFIED
@@ -231,3 +302,8 @@ to the step heights, and a step's win pad is claimed when the legs reach it.
 Do not claim something works without running it: `npm run typecheck`,
 `npm run verify`, `npm run build:client`, `npm run build:server`,
 `npm run size:client`, and a real browser for behaviour.
+
+Anything touching accounts, profiles, storage or purchases also runs
+`npm run verify:persistence` (built server, only Bloxity's verify URL stubbed via
+`node --import`; no test switches in production code), and with a real `mongod`
+(`MONGOD_BIN=...`) for the outage tests. `MONGODB_URI=...` DROPS that database.

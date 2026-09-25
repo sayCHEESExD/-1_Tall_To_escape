@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { matchMaker } from '@colyseus/core';
 import { ROOM_NAME } from '@highjump/shared';
-import { buxGrants } from './bloxity/buxGrantsStore.js';
 import { BUX_WEBHOOK_PATH, processBuxWebhook } from './bloxity/buxWebhook.js';
 import { serverConfig } from './config/serverConfig.js';
+import { grantStore, persistence } from './runtime.js';
 import { logger } from './util/logger.js';
 
 const SCOPE = 'http';
@@ -26,7 +26,10 @@ const readBody = async (request: IncomingMessage): Promise<string | null> => {
  *
  * Two routes. `/health` reports the matchmaker's own tally of rooms and
  * players, which is what makes the 15-player cap and the empty-room rule
- * checkable from outside the process (`npm run verify:capacity`).
+ * checkable from outside the process (`npm run verify:capacity`). It ALWAYS
+ * answers 200, storage or no storage - Legion restart-loops a pod whose health
+ * check fails, and a dead database is not fixed by restarting the game server.
+ * `storage` / `storageOk` say which store is in use and whether it answered.
  * `/bloxity/bux` is Bloxity's server-to-server Bux fulfilment webhook - the
  * ONLY way a purchase becomes Wins; nothing the client reports is trusted.
  */
@@ -43,7 +46,16 @@ export const createHttpServer = (): Server =>
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
           });
-          response.end(JSON.stringify({ ok: true, room: ROOM_NAME, rooms: rooms.length, players }));
+          response.end(
+            JSON.stringify({
+              ok: true,
+              room: ROOM_NAME,
+              rooms: rooms.length,
+              players,
+              storage: persistence.profiles.kind,
+              storageOk: persistence.profiles.healthy,
+            }),
+          );
         })
         .catch(() => {
           response.writeHead(200, { 'Content-Type': 'application/json' });
@@ -53,12 +65,14 @@ export const createHttpServer = (): Server =>
     }
 
     if (url === BUX_WEBHOOK_PATH && request.method === 'POST') {
-      void readBody(request).then((raw) => {
+      void readBody(request).then(async (raw) => {
         const secret = request.headers['x-legion-webhook-secret'];
+        // 2xx only once the grant is DURABLY recorded - that is what tells
+        // Bloxity the purchase is safe.
         const result =
           raw === null
             ? { status: 413, body: { ok: false, error: 'payload too large' } }
-            : processBuxWebhook(typeof secret === 'string' ? secret : undefined, raw, buxGrants, {
+            : await processBuxWebhook(typeof secret === 'string' ? secret : undefined, raw, grantStore, {
                 secret: serverConfig.buxWebhookSecret,
                 allowUnsigned: serverConfig.buxAllowUnsigned,
               });

@@ -60,6 +60,24 @@ npm run size:client
 `npm run verify:capacity` checks the 15-player cap, overflow routing and that empty
 rooms close.
 
+`npm run verify:persistence` (not part of `verify`; it spawns processes and takes a
+few minutes) runs the BUILT server with only Bloxity's token-verify URL stubbed, joins
+with real colyseus.js clients and reads storage directly: guest restore, first-login
+migration, sign-in/out mid-session, cross-browser accounts, forged tokens and ids,
+purchases across a restart, Bloxity unavailable, server restarts and corrupt files.
+JSON store always; MongoDB too when given one:
+
+```bash
+MONGOD_BIN=/path/to/mongod npm run verify:persistence
+```
+
+With `MONGOD_BIN` the script starts its own `mongod` (fixed port, temp data) and also
+runs the outage tests - database down at a join, at boot, during a sign-out and
+during a save. `MONGODB_URI=...` runs against that database instead and **drops it**,
+so only ever point it at a throwaway test database. A `mongod` binary can be had
+without adding anything to this repo, e.g. by installing `mongodb-memory-server`
+in another folder.
+
 ## Controls
 
 | Action | Desktop | Touch |
@@ -94,9 +112,17 @@ Every gameplay number lives in `shared/src/config/`:
 The same split as the previous games: the client is static files, the server is a
 long-lived Node process.
 
-- **Server:** `Dockerfile` at the repo root. Set `PORT` (defaults to 2571) and mount
-  a volume at `HIGHJUMP_DATA_DIR` (default `/data`) or a redeploy wipes profiles.
-  `/health` reports rooms and players.
+- **Server:** `Dockerfile` at the repo root. Set `PORT` (defaults to 2571).
+  `/health` reports rooms, players and whether storage answers.
+- **Player progress** lives in the managed MongoDB that Legion injects as
+  `MONGODB_URI` (isolated to this game and channel), so it survives restarts,
+  scale-to-zero and deploys. A **signed-in** Bloxity player's progress belongs to
+  their ACCOUNT - any browser, any device; a **guest's** stays with their browser as
+  before. The first time a guest signs in to an account that has no progress yet,
+  their guest progress moves into it. Bux purchases are recorded in the same database
+  and pay out exactly once. Without `MONGODB_URI` (local development) the server uses
+  JSON files in `HIGHJUMP_DATA_DIR` instead - and when running the image elsewhere
+  without Mongo, mount a volume there or a redeploy wipes progress.
 - **Client:** `npm run build:client` and publish `client/dist` (`netlify.toml` is
   included). Set `VITE_SERVER_URL` at build time to the server's `wss://` address.
 
@@ -132,7 +158,11 @@ Login, avatar, friends, portal settings, lifecycle and Bux are integrated in
 | --- | --- |
 | `BLOXITY_WEBHOOK_SECRET` | shared secret Bloxity sends as `x-legion-webhook-secret`; required, or `/bloxity/bux` refuses (and Bloxity refunds) |
 | `BLOXITY_WEBHOOK_ALLOW_UNSIGNED` | `1` accepts unsigned webhooks - local development only |
-| `BLOXITY_API_BASE` | defaults to `https://api.bloxity.io` (token verification) |
+| `MONGODB_URI` | injected by Legion: the managed database profiles and purchases live in (unset = JSON files) |
+| `BLOXITY_GAME_ID` | injected by Legion: the game id player tokens are verified against |
+
+The Bloxity API host used to verify player tokens is a constant
+(`https://api.bloxity.io`), deliberately not configurable.
 
 Register `https://<backend host>/bloxity/bux` as the game's webhook and create the SKUs
 `wins_small` and `wins_large` in the Bloxity catalogue.
